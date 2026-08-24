@@ -81,6 +81,7 @@ export default function App() {
         const profile = await api.fetchProfile(s.user.id);
         setCurrentUser(profile);
         if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+          if (event === "SIGNED_IN") setWorkspace(null);
           try { await refreshWorkspace(s.user.id); } catch (_) {}
         }
       } else {
@@ -95,7 +96,7 @@ export default function App() {
     };
   }, [refreshWorkspace]);
 
-  if (loading || session === undefined) {
+  if (loading || session === undefined || (session && currentUser && workspace === null)) {
     return (
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontFamily: "-apple-system,sans-serif" }}>
         Loading…
@@ -108,6 +109,7 @@ export default function App() {
       <AuthScreen
         onAuthed={async (s) => {
           setSession(s);
+          setWorkspace(null);
           const profile = await api.fetchProfile(s.user.id);
           setCurrentUser(profile);
           setLoading(true);
