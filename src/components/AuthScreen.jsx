@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Mail, Lock, User, Eye, EyeOff } from "lucide-react";
 import { C, inputStyle } from "../lib/theme";
+import { BuildVersion } from "../lib/version";
 import { Field } from "./ui";
 import * as api from "../lib/api";
 
@@ -158,6 +159,7 @@ export default function AuthScreen({ onAuthed }) {
           Passwords are handled by Supabase Auth (hashed, never stored in the browser). Email verification is controlled in your Supabase Auth settings.
         </p>
       </div>
+      <BuildVersion fixed />
     </div>
   );
 }

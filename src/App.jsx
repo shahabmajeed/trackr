@@ -3,6 +3,7 @@ import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, User } from "luc
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
 import { C, selStyle, fmtMinutes } from "./lib/theme";
+import { BuildVersion } from "./lib/version";
 import { toastSuccess, toastError, toastInfo, toastConfirm } from "./lib/toast";
 import { Avatar } from "./components/ui";
 import AuthScreen from "./components/AuthScreen";
@@ -543,6 +544,7 @@ export default function App() {
           )}
         </div>
       </div>
+      <BuildVersion fixed />
 
       {selectedIssue && (
         <IssueModal
