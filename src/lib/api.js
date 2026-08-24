@@ -1,5 +1,10 @@
 import { supabase } from "./supabase";
 import { DEFAULT_STATUSES } from "./theme";
+import {
+  validateParentChild,
+  validateRootCreate,
+  validateTypeChange,
+} from "./issueHierarchy";
 
 /* ---------- mappers (DB snake_case → app camelCase) ---------- */
 
@@ -555,19 +560,43 @@ async function nextIssueKey(projectId, projectKey) {
   return `${projectKey}-${(count || 0) + 1}`;
 }
 
+async function fetchIssueBrief(id) {
+  const { data, error } = await supabase
+    .from("issues")
+    .select("id, type, parent_id, sprint_id, epic_id")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function resolveEpicIdForParent(parentId) {
+  let id = parentId;
+  const seen = new Set();
+  while (id && !seen.has(id)) {
+    seen.add(id);
+    const row = await fetchIssueBrief(id);
+    if (row.type === "epic") return row.id;
+    if (row.epic_id) return row.epic_id;
+    id = row.parent_id;
+  }
+  return null;
+}
+
 export async function createIssue({
   projectId, projectKey, userId, title, type, statusId, sprintId, parentId = null, epicId = null,
 }) {
+  const childType = type || "task";
+
   if (parentId) {
-    const { data: parent, error: pErr } = await supabase
-      .from("issues")
-      .select("id, parent_id, sprint_id, epic_id")
-      .eq("id", parentId)
-      .single();
-    if (pErr) throw pErr;
-    if (parent.parent_id) throw new Error("Cannot create a subtask under another subtask.");
+    const parent = await fetchIssueBrief(parentId);
+    const err = validateParentChild(parent.type, childType);
+    if (err) throw new Error(err);
     if (sprintId == null) sprintId = parent.sprint_id;
-    if (epicId == null) epicId = parent.epic_id;
+    epicId = await resolveEpicIdForParent(parentId);
+  } else {
+    const err = validateRootCreate(childType);
+    if (err) throw new Error(err);
   }
 
   const key = await nextIssueKey(projectId, projectKey);
@@ -576,7 +605,7 @@ export async function createIssue({
     .insert({
       project_id: projectId,
       key,
-      type: type || "task",
+      type: childType,
       status_id: statusId,
       title,
       assignee_id: userId,
@@ -605,6 +634,38 @@ export async function createIssue({
 }
 
 export async function updateIssue(issueId, patch, userId, prev = {}) {
+  const nextType = patch.type !== undefined ? patch.type : prev.type;
+  const nextParentId = patch.parentId !== undefined ? patch.parentId : (prev.parentId ?? null);
+
+  if (patch.type !== undefined || patch.parentId !== undefined) {
+    if (nextParentId) {
+      const parent = await fetchIssueBrief(nextParentId);
+      const err = validateParentChild(parent.type, nextType);
+      if (err) throw new Error(err);
+    } else {
+      const err = validateRootCreate(nextType);
+      if (err) throw new Error(err);
+    }
+  }
+
+  if (patch.type !== undefined && patch.type !== prev.type) {
+    const { data: children } = await supabase.from("issues").select("type").eq("parent_id", issueId);
+    let parentType = null;
+    if (nextParentId) {
+      const parent = await fetchIssueBrief(nextParentId);
+      parentType = parent.type;
+    }
+    const err = validateTypeChange(nextType, {
+      parentType,
+      childTypes: (children || []).map((c) => c.type),
+    });
+    if (err) throw new Error(err);
+  }
+
+  if (patch.parentId !== undefined && patch.parentId) {
+    patch.epicId = await resolveEpicIdForParent(patch.parentId);
+  }
+
   const row = { updated_at: new Date().toISOString() };
   const activity = [];
 

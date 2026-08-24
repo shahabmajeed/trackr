@@ -1,5 +1,5 @@
 import {
-  Bug, Bookmark, CheckSquare, Zap,
+  Bug, Bookmark, CheckSquare, Zap, CornerDownRight,
   ChevronsUp, ArrowUp, Minus, ArrowDown, ChevronsDown,
 } from "lucide-react";
 
@@ -47,10 +47,11 @@ export const STATUS_COLOR_PRESETS = [
 ];
 
 export const TYPES = {
+  epic: { label: "Epic", icon: Zap, color: C.epic },
+  story: { label: "Story", icon: Bookmark, color: C.story },
   task: { label: "Task", icon: CheckSquare, color: C.task },
   bug: { label: "Bug", icon: Bug, color: C.bug },
-  story: { label: "Story", icon: Bookmark, color: C.story },
-  epic: { label: "Epic", icon: Zap, color: C.epic },
+  subtask: { label: "Subtask", icon: CornerDownRight, color: C.faint },
 };
 
 export const PRIORITIES = {

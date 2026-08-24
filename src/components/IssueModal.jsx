@@ -8,6 +8,14 @@ import {
 import { Avatar, Modal, Field, Chip } from "./ui";
 import * as api from "../lib/api";
 import { toastSuccess, toastError } from "../lib/toast";
+import {
+  allowedChildTypes,
+  canHaveChildren,
+  childCreatePlaceholder,
+  childSectionLabel,
+  defaultChildType,
+  isSubtaskType,
+} from "../lib/issueHierarchy";
 
 function useElapsedLabel(startedAt) {
   const [now, setNow] = useState(Date.now());
@@ -125,7 +133,18 @@ function activityLabel(a, users, statuses, issues) {
   }
 }
 
-const SUBTASK_TYPES = Object.entries(TYPES).filter(([k]) => k !== "epic");
+function allowedTypeOptions(issue, parentIssue) {
+  if (isSubtaskType(issue.type)) {
+    return Object.entries(TYPES).filter(([k]) => k === "subtask");
+  }
+  if (issue.parentId && parentIssue) {
+    const allowed = allowedChildTypes(parentIssue.type);
+    if (allowed.includes(issue.type)) {
+      return Object.entries(TYPES).filter(([k]) => allowed.includes(k) || k === issue.type);
+    }
+  }
+  return Object.entries(TYPES).filter(([k]) => k !== "subtask");
+}
 
 export default function IssueModal({
   issue, project, users, allIssues, currentUser, onClose, onChanged, onDeleted, onOpenIssue, onCreateChild, onDeleteIssue,
@@ -152,10 +171,11 @@ export default function IssueModal({
     setDesc(issue.description || "");
     setComment("");
     setSubtaskTitle("");
+    setSubtaskType(defaultChildType(issue.type));
     setLogging(false);
     setEditingTimeLogId(null);
     setEditingCommentId(null);
-  }, [issue.id]);
+  }, [issue.id, issue.type]);
 
   // Keep local title in sync when parent updates the same issue (e.g. after save)
   useEffect(() => {
@@ -167,13 +187,21 @@ export default function IssueModal({
   const members = users.filter((u) => project.members.includes(u.id));
   const epics = allIssues.filter((i) => i.type === "epic" && i.id !== issue.id && !i.parentId);
   const parentIssue = issue.parentId ? allIssues.find((i) => i.id === issue.parentId) : null;
-  const isSubtask = Boolean(issue.parentId);
+  const isSubtask = isSubtaskType(issue.type);
   const childIssues = allIssues.filter((i) => i.parentId === issue.id);
-  const epicChildren = allIssues.filter((i) => i.epicId === issue.id && !i.parentId);
+  const legacyEpicLinks = issue.type === "epic"
+    ? allIssues.filter((i) => i.epicId === issue.id && !i.parentId && i.id !== issue.id)
+    : [];
+  const displayChildren = [
+    ...childIssues,
+    ...legacyEpicLinks.filter((l) => !childIssues.some((c) => c.id === l.id)),
+  ];
+  const childTypesAllowed = allowedChildTypes(issue.type);
+  const showChildSection = canHaveChildren(issue.type);
   const doneStatusIds = new Set(
     project.statuses.filter((s) => s.label.toLowerCase() === "done").map((s) => s.id)
   );
-  const childDoneCount = childIssues.filter((c) => doneStatusIds.has(c.status)).length;
+  const childDoneCount = displayChildren.filter((c) => doneStatusIds.has(c.status)).length;
   const timeLogs = issue.timeLogs || [];
   const totalMinutes = timeLogs.reduce((a, l) => a + l.minutes, 0);
   const watching = (issue.watchers || []).includes(currentUser.id);
@@ -344,7 +372,11 @@ export default function IssueModal({
   };
 
   const addChild = async () => {
-    if (!subtaskTitle.trim() || isSubtask || creatingSub) return;
+    if (!subtaskTitle.trim() || !showChildSection || creatingSub) return;
+    if (!childTypesAllowed.includes(subtaskType)) {
+      toastError(`${TYPES[subtaskType]?.label || subtaskType} cannot be added here.`);
+      return;
+    }
     setCreatingSub(true);
     try {
       await onCreateChild({
@@ -352,11 +384,10 @@ export default function IssueModal({
         type: subtaskType,
         parentId: issue.id,
         sprintId: issue.sprintId,
-        epicId: issue.epicId,
+        epicId: issue.type === "epic" ? issue.id : issue.epicId,
       });
       setSubtaskTitle("");
-      setSubtaskType("task");
-      // createIssue already toasts
+      setSubtaskType(defaultChildType(issue.type));
     } catch (e) {
       toastError(e.message);
     } finally {
@@ -510,7 +541,7 @@ export default function IssueModal({
               style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
           </Field>
 
-          {isSubtask ? (
+          {issue.parentId && (
             <Field label="Parent">
               <div
                 onClick={() => parentIssue && onOpenIssue?.(parentIssue.id)}
@@ -529,12 +560,16 @@ export default function IssueModal({
                   <span style={{ fontSize: 13, color: C.faint }}>Parent issue unavailable</span>
                 )}
               </div>
-              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>Subtasks cannot contain other subtasks.</div>
+              {isSubtask && (
+                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>Subtasks cannot have children.</div>
+              )}
             </Field>
-          ) : (
-            <Field label={`Subtasks (${childDoneCount}/${childIssues.length})`}>
+          )}
+
+          {showChildSection && (
+            <Field label={`${childSectionLabel(issue.type)} (${childDoneCount}/${displayChildren.length})`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-                {childIssues.map((c) => {
+                {displayChildren.map((c) => {
                   const st = statusMeta(project.statuses, c.status);
                   return (
                     <div
@@ -553,33 +588,25 @@ export default function IssueModal({
                     </div>
                   );
                 })}
-                {childIssues.length === 0 && (
-                  <div style={{ fontSize: 12.5, color: C.faint, padding: "4px 0" }}>No subtasks yet. Create a child issue below.</div>
+                {displayChildren.length === 0 && (
+                  <div style={{ fontSize: 12.5, color: C.faint, padding: "4px 0" }}>
+                    No {childSectionLabel(issue.type).toLowerCase()} yet.
+                  </div>
                 )}
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <select value={subtaskType} onChange={(e) => setSubtaskType(e.target.value)} style={{ ...selStyle, width: 110 }}>
-                  {SUBTASK_TYPES.map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
+                {childTypesAllowed.length > 1 && (
+                  <select value={subtaskType} onChange={(e) => setSubtaskType(e.target.value)} style={{ ...selStyle, width: 110 }}>
+                    {childTypesAllowed.map((k) => <option key={k} value={k}>{TYPES[k].label}</option>)}
+                  </select>
+                )}
                 <input value={subtaskTitle} onChange={(e) => setSubtaskTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addChild()}
-                  placeholder="Create subtask…" style={{ ...inputStyle, flex: 1 }} />
+                  placeholder={childCreatePlaceholder(issue.type)} style={{ ...inputStyle, flex: 1 }} />
                 <button onClick={addChild} disabled={creatingSub}
                   style={{ border: "none", background: C.primary, color: "#fff", borderRadius: 4, padding: "0 12px", height: 34, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: creatingSub ? 0.6 : 1 }}>
                   Create
                 </button>
               </div>
-            </Field>
-          )}
-
-          {issue.type === "epic" && epicChildren.length > 0 && (
-            <Field label={`Issues in this epic (${epicChildren.length})`}>
-              {epicChildren.map((c) => (
-                <div key={c.id} onClick={() => onOpenIssue?.(c.id)} style={{ fontSize: 13, padding: "4px 0", display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                  <TypeIcon type={c.type} size={12} />
-                  <span style={{ color: C.faint, fontWeight: 600 }}>{c.key}</span>
-                  <span>{c.title}</span>
-                </div>
-              ))}
             </Field>
           )}
 
@@ -725,12 +752,12 @@ export default function IssueModal({
           </Field>
           <Field label="Type">
             <select value={issue.type} onChange={(e) => update({ type: e.target.value })} style={selStyle}>
-              {(isSubtask ? SUBTASK_TYPES : Object.entries(TYPES)).map(([k, v]) => (
+              {allowedTypeOptions(issue, parentIssue).map(([k, v]) => (
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
           </Field>
-          {!isSubtask && issue.type !== "epic" && (
+          {!issue.parentId && issue.type !== "epic" && !isSubtask && (
             <Field label="Epic">
               <select value={issue.epicId || ""} onChange={(e) => update({ epicId: e.target.value || null })} style={selStyle}>
                 <option value="">No epic</option>

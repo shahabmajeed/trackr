@@ -3,6 +3,7 @@ import {
   Search, Plus, X, Tag, Rocket, Play, CheckCircle2, ChevronRight, ChevronDown, Trash2, Clock, RotateCcw, Pencil,
 } from "lucide-react";
 import { C, TYPES, PRIORITIES, inputStyle, selStyle, fmtDate, fmtDateRange, fmtMinutes, contrastText, STATUS_COLOR_PRESETS, toDateInputValue, fromDateInputValue, defaultEndDateInput } from "../lib/theme";
+import { ROOT_CREATE_TYPES } from "../lib/issueHierarchy";
 import { Avatar, Modal, Field, Chip } from "./ui";
 import { TypeIcon, StatusBadge } from "./IssueModal";
 
@@ -55,7 +56,7 @@ function CreateIssueInline({ onCreate, onCancel, defaultStatus }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: `2px solid ${C.primary}`, borderRadius: 6, background: "#fff" }}>
       <select value={type} onChange={(e) => setType(e.target.value)} style={{ border: "none", background: "transparent", fontSize: 13, cursor: "pointer" }}>
-        {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        {ROOT_CREATE_TYPES.map((k) => <option key={k} value={k}>{TYPES[k].label}</option>)}
       </select>
       <input ref={inputRef} value={title} onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") onCancel(); }}

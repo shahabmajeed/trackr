@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, User } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
-import { C, selStyle, fmtMinutes } from "./lib/theme";
+import { C, selStyle, fmtMinutes, TYPES } from "./lib/theme";
+import { typeLabel } from "./lib/issueHierarchy";
 import { BuildVersion } from "./lib/version";
 import { toastSuccess, toastError, toastInfo, toastConfirm } from "./lib/toast";
 import { Avatar } from "./components/ui";
@@ -98,7 +99,7 @@ export default function App() {
   }, [refreshWorkspace]);
 
   if (loading || session === undefined || (session && currentUser && workspace === null)) {
-    return (
+  return (
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontFamily: "-apple-system,sans-serif" }}>
         Loading…
       </div>
@@ -106,7 +107,7 @@ export default function App() {
   }
 
   if (!session || !currentUser) {
-    return (
+  return (
       <AuthScreen
         onAuthed={async (s) => {
           setSession(s);
@@ -125,14 +126,14 @@ export default function App() {
   }
 
   if (loadError) {
-    return (
+  return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", color: C.danger, padding: 24, textAlign: "center" }}>
         {loadError}
         <br />
         <span style={{ color: C.subtle, fontSize: 13 }}>Make sure you ran the SQL schema + extensions in Supabase.</span>
-      </div>
-    );
-  }
+    </div>
+  );
+}
 
   const projects = workspace?.projects || [];
   const issues = workspace?.issues || [];
@@ -141,7 +142,7 @@ export default function App() {
   const project = projects.find((p) => p.id === currentProjectId) || projects[0];
 
   if (!project) {
-    return (
+  return (
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "-apple-system,sans-serif" }}>
         <div style={{ textAlign: "center" }}>
           <p style={{ color: C.subtle, marginBottom: 12 }}>You don't have any projects yet.</p>
@@ -167,10 +168,10 @@ export default function App() {
               }
             }}
           />
-        )}
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
+}
 
   const projectIssues = issues.filter((i) => i.projectId === project.id);
   const projectSprints = sprints.filter((s) => s.projectId === project.id);
@@ -213,7 +214,7 @@ export default function App() {
         issue.watchers = [currentUser.id];
       } catch (_) {}
       setIssues((list) => [...list, issue]);
-      toastSuccess(data.parentId ? `Subtask ${issue.key} created` : `Issue ${issue.key} created`);
+      toastSuccess(data.parentId ? `${typeLabel(data.type)} ${issue.key} created` : `Issue ${issue.key} created`);
       return issue;
     } catch (e) {
       toastError(e.message);
@@ -285,7 +286,7 @@ export default function App() {
       setIssues((list) => list.filter((i) => i.id !== id && i.parentId !== id));
       if (selectedIssueId === id) setSelectedIssueId(null);
       toastSuccess(target ? `${target.key} deleted` : "Issue deleted");
-      return true;
+    return true;
     } catch (e) {
       toastError(e.message);
       return false;
@@ -479,11 +480,11 @@ export default function App() {
         <div style={{ flex: 1 }} />
         <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
           <div onClick={() => setShowProfile(true)} style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, cursor: "pointer" }}>
-            <Avatar user={currentUser} size={30} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
-              <div style={{ fontSize: 11, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.email}</div>
-            </div>
+          <Avatar user={currentUser} size={30} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
+            <div style={{ fontSize: 11, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.email}</div>
+          </div>
           </div>
           <User size={15} color={C.faint} style={{ cursor: "pointer" }} onClick={() => setShowProfile(true)} title="Edit profile" />
           <LogOut size={16} color={C.faint} style={{ cursor: "pointer" }} onClick={() => api.signOut()} />
@@ -568,8 +569,8 @@ export default function App() {
             try {
               const np = await api.createProject(currentUser.id, name, key);
               setWorkspace((w) => ({ ...w, projects: [...w.projects, np] }));
-              setCurrentProjectId(np.id);
-              setShowCreateProject(false);
+          setCurrentProjectId(np.id);
+          setShowCreateProject(false);
               toastSuccess(`Project "${name}" created`);
             } catch (e) {
               toastError(e.message);
