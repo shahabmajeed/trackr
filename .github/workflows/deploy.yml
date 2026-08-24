@@ -17,6 +17,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Also reads secrets added under Settings → Environments → github-pages
+    environment: github-pages
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,25 +32,26 @@ jobs:
 
       - run: npm ci
 
-      - name: Verify Supabase secrets
+      - name: Verify Supabase config
         run: |
+          echo "VITE_SUPABASE_URL present: $([ -n \"$VITE_SUPABASE_URL\" ] && echo yes || echo no)"
+          echo "VITE_SUPABASE_ANON_KEY present: $([ -n \"$VITE_SUPABASE_ANON_KEY\" ] && echo yes || echo no)"
           if [ -z "$VITE_SUPABASE_URL" ]; then
-            echo "::error::Missing GitHub secret VITE_SUPABASE_URL"
+            echo "::error::Missing VITE_SUPABASE_URL."
+            echo "Add it under Settings → Secrets and variables → Actions → Repository secrets"
+            echo "Name must be exactly: VITE_SUPABASE_URL (not under Variables unless you use vars)"
             exit 1
           fi
           if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo "::error::Missing GitHub secret VITE_SUPABASE_ANON_KEY"
+            echo "::error::Missing VITE_SUPABASE_ANON_KEY."
+            echo "Add it under Settings → Secrets and variables → Actions → Repository secrets"
+            echo "Name must be exactly: VITE_SUPABASE_ANON_KEY"
             exit 1
           fi
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - run: npm run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
