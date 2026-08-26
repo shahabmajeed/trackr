@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, User } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
@@ -39,10 +39,13 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [memberError, setMemberError] = useState("");
+  const workspaceUserIdRef = useRef(null);
+  const bootstrappedRef = useRef(false);
 
   const refreshWorkspace = useCallback(async (userId) => {
     const ws = await api.loadWorkspace(userId);
     setWorkspace(ws);
+    workspaceUserIdRef.current = userId;
     setCurrentProjectId((prev) => {
       if (prev && ws.projects.some((p) => p.id === prev)) return prev;
       return ws.projects[0]?.id || null;
@@ -67,29 +70,63 @@ export default function App() {
             });
             profile = await api.fetchProfile(s.user.id);
           }
+          if (!mounted) return;
           setCurrentUser(profile);
           await refreshWorkspace(s.user.id);
+          bootstrappedRef.current = true;
         }
       } catch (e) {
-        setLoadError(e.message || "Failed to load");
+        if (mounted) setLoadError(e.message || "Failed to load");
       } finally {
         if (mounted) setLoading(false);
       }
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
-      setSession(s);
-      if (s?.user) {
-        const profile = await api.fetchProfile(s.user.id);
-        setCurrentUser(profile);
-        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-          if (event === "SIGNED_IN") setWorkspace(null);
-          try { await refreshWorkspace(s.user.id); } catch (_) {}
-        }
-      } else {
-        setCurrentUser(null);
-        setWorkspace(null);
+      if (!mounted) return;
+
+      // Token refresh on tab focus — keep UI, don't reload workspace
+      if (event === "TOKEN_REFRESHED") {
+        setSession(s);
+        return;
       }
+
+      setSession(s);
+
+      if (!s?.user) {
+        if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+          workspaceUserIdRef.current = null;
+          bootstrappedRef.current = false;
+          setCurrentUser(null);
+          setWorkspace(null);
+        }
+        return;
+      }
+
+      // Same user already on screen — ignore duplicate SIGNED_IN / INITIAL_SESSION from tab focus
+      if (
+        bootstrappedRef.current &&
+        workspaceUserIdRef.current === s.user.id &&
+        (event === "SIGNED_IN" || event === "INITIAL_SESSION")
+      ) {
+        return;
+      }
+
+      try {
+        const profile = await api.fetchProfile(s.user.id);
+        if (!mounted) return;
+        setCurrentUser(profile);
+
+        const userChanged = workspaceUserIdRef.current !== s.user.id;
+        if (userChanged || event === "SIGNED_IN") {
+          // Only blank the screen when switching accounts; keep current UI for re-login of same user
+          if (userChanged && workspaceUserIdRef.current) {
+            setWorkspace(null);
+          }
+          await refreshWorkspace(s.user.id);
+          bootstrappedRef.current = true;
+        }
+      } catch (_) {}
     });
 
     return () => {
@@ -99,7 +136,7 @@ export default function App() {
   }, [refreshWorkspace]);
 
   if (loading || session === undefined || (session && currentUser && workspace === null)) {
-  return (
+    return (
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontFamily: "-apple-system,sans-serif" }}>
         Loading…
       </div>
@@ -107,16 +144,18 @@ export default function App() {
   }
 
   if (!session || !currentUser) {
-  return (
+    return (
       <AuthScreen
         onAuthed={async (s) => {
           setSession(s);
           setWorkspace(null);
+          workspaceUserIdRef.current = null;
           const profile = await api.fetchProfile(s.user.id);
           setCurrentUser(profile);
           setLoading(true);
           try {
             await refreshWorkspace(s.user.id);
+            bootstrappedRef.current = true;
           } finally {
             setLoading(false);
           }
@@ -423,6 +462,12 @@ export default function App() {
 
   const toggleLabel = (l) => setLabelFilter((f) => (f.includes(l) ? f.filter((x) => x !== l) : [...f, l]));
 
+  const resetFilters = () => {
+    setSearch("");
+    setLabelFilter([]);
+    setOnlyMine(false);
+  };
+
   const goToView = (id) => {
     if (id === view) return;
     setView(id);
@@ -458,6 +503,8 @@ export default function App() {
               const next = projects.find((p) => p.id === e.target.value);
               setCurrentProjectId(e.target.value);
               setView("board");
+              resetFilters();
+              setSelectedIssueId(null);
               toastInfo(next ? `Switched to ${next.name}` : "Project changed");
             }}
             style={{ ...selStyle, fontWeight: 700 }}

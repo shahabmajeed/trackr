@@ -448,28 +448,51 @@ export function SprintsView({ sprints, issues, onStartSprint, onCompleteSprint, 
 }
 
 export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
-  const [period, setPeriod] = useState("week"); // day | week | month | all
+  const [period, setPeriod] = useState("week"); // day | week | month | all | custom | range
   const [section, setSection] = useState("tickets"); // tickets | people | activity
+  const [customDate, setCustomDate] = useState(toDateInputValue(Date.now()));
+  const [rangeFrom, setRangeFrom] = useState(toDateInputValue(Date.now() - 6 * 86400000));
+  const [rangeTo, setRangeTo] = useState(toDateInputValue(Date.now()));
 
   const allLogs = issues.flatMap((i) =>
     (i.timeLogs || []).map((l) => ({ ...l, issue: i }))
   );
 
-  const inPeriod = (ts) => {
-    if (period === "all") return true;
+  const startOfLocalDay = (ts) => {
     const d = new Date(ts);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const endOfLocalDay = (ts) => startOfLocalDay(ts) + 86400000 - 1;
+
+  const inPeriod = (ts) => {
+    const t = new Date(ts).getTime();
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (period === "day") return d >= startOfDay;
+    if (period === "all") return true;
+    if (period === "day") {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      return t >= start;
+    }
     if (period === "week") {
       const day = now.getDay();
       const mondayOffset = day === 0 ? -6 : 1 - day;
-      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
-      return d >= startOfWeek;
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset).getTime();
+      return t >= start;
     }
     if (period === "month") {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      return d >= startOfMonth;
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      return t >= start;
+    }
+    if (period === "custom") {
+      if (!customDate) return false;
+      const dayStart = fromDateInputValue(customDate);
+      return t >= startOfLocalDay(dayStart) && t <= endOfLocalDay(dayStart);
+    }
+    if (period === "range") {
+      if (!rangeFrom || !rangeTo) return false;
+      const fromTs = startOfLocalDay(fromDateInputValue(rangeFrom));
+      const toTs = endOfLocalDay(fromDateInputValue(rangeTo));
+      if (fromTs > toTs) return false;
+      return t >= fromTs && t <= toTs;
     }
     return true;
   };
@@ -512,15 +535,37 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
   const maxUserMins = userRows[0]?.[1] || 1;
   const maxDayMins = dayRows[0]?.minutes || 1;
 
-  const periodLabels = { day: "Today", week: "This week", month: "This month", all: "All time" };
+  const periodSubtitle = () => {
+    if (period === "custom" && customDate) {
+      return new Date(fromDateInputValue(customDate)).toLocaleDateString(undefined, {
+        month: "short", day: "numeric", year: "numeric",
+      });
+    }
+    if (period === "range" && rangeFrom && rangeTo) {
+      return `${fmtDate(fromDateInputValue(rangeFrom))} – ${fmtDate(fromDateInputValue(rangeTo))}`;
+    }
+    return ({ day: "today", week: "this week", month: "this month", all: "all time" })[period] || period;
+  };
+
   const issuesWithTime = issueRows.length;
   const contributors = userRows.length;
+  const showDailyBreakdown = dayRows.length > 0 && period !== "day" && period !== "custom";
+  const rangeInvalid = period === "range" && rangeFrom && rangeTo && rangeFrom > rangeTo;
+
+  const selectPeriod = (id) => {
+    setPeriod(id);
+    if (id === "custom" && !customDate) setCustomDate(toDateInputValue(Date.now()));
+    if (id === "range") {
+      if (!rangeFrom) setRangeFrom(toDateInputValue(Date.now() - 6 * 86400000));
+      if (!rangeTo) setRangeTo(toDateInputValue(Date.now()));
+    }
+  };
 
   const tabBtn = (id, label) => (
     <button
       key={id}
       type="button"
-      onClick={() => setPeriod(id)}
+      onClick={() => selectPeriod(id)}
       style={{
         background: period === id ? C.primary : "#fff",
         color: period === id ? "#fff" : C.subtle,
@@ -571,16 +616,65 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 4px", color: C.text }}>Time reports</h2>
         <p style={{ fontSize: 13, color: C.subtle, margin: 0 }}>
-          {project?.name || "Project"} · {periodLabels[period].toLowerCase()}
+          {project?.name || "Project"} · {periodSubtitle()}
         </p>
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         {tabBtn("day", "Today")}
         {tabBtn("week", "This week")}
         {tabBtn("month", "This month")}
+        {tabBtn("custom", "By date")}
+        {tabBtn("range", "Date range")}
         {tabBtn("all", "All time")}
       </div>
+
+      {period === "custom" && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10, marginBottom: 20,
+          background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px",
+        }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.subtle }}>Date</span>
+          <input
+            type="date"
+            value={customDate}
+            max={toDateInputValue(Date.now())}
+            onChange={(e) => setCustomDate(e.target.value)}
+            style={{ ...inputStyle, width: 160 }}
+          />
+        </div>
+      )}
+
+      {period === "range" && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap",
+          background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px",
+        }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.subtle }}>From</span>
+          <input
+            type="date"
+            value={rangeFrom}
+            max={rangeTo || toDateInputValue(Date.now())}
+            onChange={(e) => {
+              setRangeFrom(e.target.value);
+              if (rangeTo && e.target.value > rangeTo) setRangeTo(e.target.value);
+            }}
+            style={{ ...inputStyle, width: 160 }}
+          />
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.subtle }}>To</span>
+          <input
+            type="date"
+            value={rangeTo}
+            min={rangeFrom || undefined}
+            max={toDateInputValue(Date.now())}
+            onChange={(e) => setRangeTo(e.target.value)}
+            style={{ ...inputStyle, width: 160 }}
+          />
+          {rangeInvalid && (
+            <span style={{ fontSize: 12, color: C.danger }}>End date must be on or after start date</span>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
         <StatCard
@@ -597,11 +691,11 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
         />
       </div>
 
-      {dayRows.length > 0 && period !== "day" && (
+      {showDailyBreakdown && (
         <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 18px", marginBottom: 24 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 14 }}>Daily breakdown</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {dayRows.slice(0, 14).map((row) => (
+            {dayRows.slice(0, 31).map((row) => (
               <div key={row.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ fontSize: 12, color: C.subtle, width: 100, flexShrink: 0 }}>{row.label}</span>
                 <Bar pct={(row.minutes / maxDayMins) * 100} />
@@ -624,7 +718,7 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
           textAlign: "center", color: C.subtle,
         }}>
           <Clock size={32} color={C.faint} style={{ marginBottom: 12 }} />
-          <div style={{ fontWeight: 700, color: C.text, marginBottom: 4 }}>No time logged {periodLabels[period].toLowerCase()}</div>
+          <div style={{ fontWeight: 700, color: C.text, marginBottom: 4 }}>No time logged for {periodSubtitle()}</div>
           <div style={{ fontSize: 13 }}>Move issues to In Progress for auto-tracking, or log time manually on a ticket.</div>
         </div>
       )}

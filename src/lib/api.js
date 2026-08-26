@@ -776,7 +776,7 @@ export async function deleteComment(commentId) {
 
 /* ---------- time logs ---------- */
 
-export async function addTimeLog(issueId, userId, minutes, note, subtaskId = null) {
+export async function addTimeLog(issueId, userId, minutes, note, subtaskId = null, logDate = null) {
   const { data, error } = await supabase
     .from("time_logs")
     .insert({
@@ -785,7 +785,8 @@ export async function addTimeLog(issueId, userId, minutes, note, subtaskId = nul
       minutes,
       note: note || "",
       subtask_id: subtaskId,
-      log_date: new Date().toISOString(),
+      // Manual logs pass a work date; auto-tracked logs leave null → now
+      log_date: logDate ? new Date(logDate).toISOString() : new Date().toISOString(),
     })
     .select()
     .single();
@@ -845,10 +846,11 @@ export async function ensureTimerRunning(issue, statuses, userId) {
   return { ...updated, timerStartedAt: Date.now() };
 }
 
-export async function updateTimeLog(logId, { minutes, note }) {
+export async function updateTimeLog(logId, { minutes, note, date }) {
   const row = { updated_at: new Date().toISOString() };
   if (minutes != null) row.minutes = minutes;
   if (note != null) row.note = note;
+  if (date !== undefined) row.log_date = date ? new Date(date).toISOString() : null;
   const { data, error } = await supabase.from("time_logs").update(row).eq("id", logId).select().single();
   if (error) throw error;
   return mapTimeLog(data);

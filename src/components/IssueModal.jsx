@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import {
   C, TYPES, PRIORITIES, LINK_TYPES, inputStyle, selStyle, fmtDate, fmtMinutes, statusMeta,
+  toDateInputValue, fromDateInputValue,
 } from "../lib/theme";
 import { Avatar, Modal, Field, Chip } from "./ui";
 import * as api from "../lib/api";
@@ -64,27 +65,36 @@ function StatusBadge({ status, statuses, onChange, compact }) {
   );
 }
 
-function LogTimeForm({ onSave, onCancel, initialMinutes = 0, initialNote = "", saveLabel = "Save" }) {
+function LogTimeForm({ onSave, onCancel, initialMinutes = 0, initialNote = "", initialDate = null, saveLabel = "Save" }) {
   const [hours, setHours] = useState(initialMinutes ? String(Math.floor(initialMinutes / 60) || "") : "");
   const [minutes, setMinutes] = useState(initialMinutes ? String(initialMinutes % 60 || "") : "");
   const [note, setNote] = useState(initialNote || "");
+  const [logDate, setLogDate] = useState(toDateInputValue(initialDate || Date.now()));
   const submit = () => {
     const total = (parseInt(hours, 10) || 0) * 60 + (parseInt(minutes, 10) || 0);
-    if (total <= 0) return;
-    onSave(total, note.trim());
+    if (total <= 0 || !logDate) return;
+    onSave(total, note.trim(), fromDateInputValue(logDate));
   };
   return (
     <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10, background: "#fff" }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input value={hours} onChange={(e) => setHours(e.target.value.replace(/\D/g, ""))} placeholder="0" style={{ ...inputStyle, width: 56, textAlign: "center" }} />
-        <span style={{ alignSelf: "center", fontSize: 12.5, color: C.subtle }}>h</span>
+        <span style={{ fontSize: 12.5, color: C.subtle }}>h</span>
         <input value={minutes} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ""))} placeholder="0" style={{ ...inputStyle, width: 56, textAlign: "center" }} />
-        <span style={{ alignSelf: "center", fontSize: 12.5, color: C.subtle }}>m</span>
+        <span style={{ fontSize: 12.5, color: C.subtle }}>m</span>
+        <input
+          type="date"
+          value={logDate}
+          max={toDateInputValue(Date.now())}
+          onChange={(e) => setLogDate(e.target.value)}
+          style={{ ...inputStyle, width: 150, marginLeft: "auto" }}
+          title="Work date"
+        />
       </div>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What did you work on? (optional)" style={{ ...inputStyle, marginBottom: 8 }} />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button type="button" onClick={onCancel} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-        <button type="button" onClick={submit} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "5px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{saveLabel}</button>
+        <button type="button" onClick={submit} disabled={!logDate} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "5px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: !logDate ? 0.5 : 1 }}>{saveLabel}</button>
       </div>
     </div>
   );
@@ -338,9 +348,9 @@ export default function IssueModal({
     }
   };
 
-  const onLogTime = async (mins, note) => {
+  const onLogTime = async (mins, note, date) => {
     try {
-      const log = await api.addTimeLog(issue.id, currentUser.id, mins, note, null);
+      const log = await api.addTimeLog(issue.id, currentUser.id, mins, note, null, date);
       patchLocal({ timeLogs: [...timeLogs, log] });
       setLogging(false);
       toastSuccess("Time logged");
@@ -349,9 +359,9 @@ export default function IssueModal({
     }
   };
 
-  const saveEditTimeLog = async (id, mins, note) => {
+  const saveEditTimeLog = async (id, mins, note, date) => {
     try {
-      const updated = await api.updateTimeLog(id, { minutes: mins, note });
+      const updated = await api.updateTimeLog(id, { minutes: mins, note, date });
       patchLocal({ timeLogs: timeLogs.map((t) => (t.id === id ? updated : t)) });
       setEditingTimeLogId(null);
       toastSuccess("Time log updated");
@@ -854,9 +864,10 @@ export default function IssueModal({
                           key={l.id}
                           initialMinutes={l.minutes}
                           initialNote={l.note || ""}
+                          initialDate={l.date}
                           saveLabel="Update"
                           onCancel={() => setEditingTimeLogId(null)}
-                          onSave={(mins, note) => saveEditTimeLog(l.id, mins, note)}
+                          onSave={(mins, note, date) => saveEditTimeLog(l.id, mins, note, date)}
                         />
                       </div>
                     );
