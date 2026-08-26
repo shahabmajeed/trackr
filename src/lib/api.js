@@ -24,17 +24,81 @@ export function mapStatus(s) {
   };
 }
 
-export function mapProject(p, members = [], statuses = []) {
+export function mapProject(p, members = [], statuses = [], scopeFiles = []) {
   return {
     id: p.id,
     key: p.key,
     name: p.name,
     ownerId: p.owner_id,
     createdAt: p.created_at,
+    descriptionHtml: p.description_html || "",
+    websiteUrl: p.website_url || "",
+    platform: p.platform || "",
+    coverImageUrl: p.cover_image_url || null,
+    clientName: p.client_name || "",
+    clientEmail: p.client_email || "",
+    clientSource: p.client_source || "",
+    clientWebsite: p.client_website || "",
+    clientImageUrl: p.client_image_url || null,
+    updatedAt: p.updated_at ? new Date(p.updated_at).getTime() : null,
     members: members.map((m) => m.user_id),
     memberRoles: Object.fromEntries(members.map((m) => [m.user_id, m.role])),
     statuses: statuses.map(mapStatus).sort((a, b) => a.sortOrder - b.sortOrder),
+    scopeFiles: scopeFiles.map(mapScopeFile),
   };
+}
+
+export function mapScopeFile(f) {
+  return {
+    id: f.id,
+    projectId: f.project_id,
+    uploadedBy: f.uploaded_by,
+    fileName: f.file_name,
+    filePath: f.file_path || null,
+    fileSize: f.file_size,
+    mimeType: f.mime_type,
+    kind: f.kind || "document",
+    title: f.title || f.file_name || "",
+    description: f.description || "",
+    labels: f.labels || [],
+    linkUrl: f.link_url || null,
+    fileType: f.file_type || detectScopeFileType({
+      mimeType: f.mime_type,
+      fileName: f.file_name,
+      linkUrl: f.link_url,
+      kind: f.kind,
+    }),
+    collection: f.collection === "reference" ? "reference" : "client",
+    createdAt: f.created_at ? new Date(f.created_at).getTime() : Date.now(),
+    updatedAt: f.updated_at ? new Date(f.updated_at).getTime() : null,
+  };
+}
+
+export function detectScopeFileType({ mimeType = "", fileName = "", linkUrl = "", kind = "" } = {}) {
+  const url = (linkUrl || "").toLowerCase();
+  const name = (fileName || "").toLowerCase();
+  const mime = (mimeType || "").toLowerCase();
+
+  if (url.includes("docs.google.com/document") || url.includes("document/d/")) return "google_doc";
+  if (url.includes("docs.google.com/spreadsheets") || url.includes("sheets.google.com") || url.includes("spreadsheets/d/")) {
+    return "google_sheet";
+  }
+  if (url && !name) return "link";
+  if (kind === "image" || mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(name)) return "image";
+  if (mime.includes("pdf") || name.endsWith(".pdf")) return "pdf";
+  if (
+    mime.includes("word") ||
+    mime.includes("officedocument.wordprocessing") ||
+    /\.(docx?|rtf)$/i.test(name)
+  ) return "word";
+  if (url) return "link";
+  return "document";
+}
+
+export function scopeFileOpenUrl(file) {
+  if (file.linkUrl) return file.linkUrl.startsWith("http") ? file.linkUrl : `https://${file.linkUrl}`;
+  if (file.filePath) return scopeFilePublicUrl(file.filePath);
+  return null;
 }
 
 export function mapSprint(s) {
@@ -301,11 +365,32 @@ export async function loadWorkspace(userId) {
     activity = act;
   }
 
+  let scopeFiles = [];
+  {
+    const safeScope = async (promise) => {
+      try {
+        const res = await promise;
+        if (res.error) {
+          console.warn(res.error.message);
+          return [];
+        }
+        return res.data || [];
+      } catch (e) {
+        console.warn(e);
+        return [];
+      }
+    };
+    scopeFiles = await safeScope(
+      supabase.from("project_scope_files").select("*").in("project_id", projectIds).order("created_at")
+    );
+  }
+
   const mappedProjects = (projects || []).map((p) =>
     mapProject(
       p,
       (allMembers || []).filter((m) => m.project_id === p.id),
       (statuses || []).filter((s) => s.project_id === p.id),
+      (scopeFiles || []).filter((f) => f.project_id === p.id),
     ),
   );
 
@@ -369,7 +454,149 @@ export async function createProject(ownerId, name, key) {
   const { data: statuses, error: sErr } = await supabase.from("statuses").insert(statusRows).select();
   if (sErr) throw sErr;
 
-  return mapProject(project, [{ user_id: ownerId, role: "owner" }], statuses);
+  return mapProject(project, [{ user_id: ownerId, role: "owner" }], statuses, []);
+}
+
+export async function updateProject(projectId, patch) {
+  const row = { updated_at: new Date().toISOString() };
+  const map = {
+    name: "name",
+    key: "key",
+    descriptionHtml: "description_html",
+    websiteUrl: "website_url",
+    platform: "platform",
+    coverImageUrl: "cover_image_url",
+    clientName: "client_name",
+    clientEmail: "client_email",
+    clientSource: "client_source",
+    clientWebsite: "client_website",
+    clientImageUrl: "client_image_url",
+  };
+  for (const [k, col] of Object.entries(map)) {
+    if (patch[k] === undefined) continue;
+    let val = patch[k];
+    if (k === "key" && val != null) val = String(val).toUpperCase().trim();
+    row[col] = val;
+  }
+  const { data, error } = await supabase.from("projects").update(row).eq("id", projectId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export function scopeFilePublicUrl(filePath) {
+  const { data } = supabase.storage.from("attachments").getPublicUrl(filePath);
+  return data.publicUrl;
+}
+
+export async function uploadScopeFile(projectId, userId, file, meta = {}) {
+  if (typeof meta === "string") meta = { kind: meta };
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `scope/${projectId}/${Date.now()}_${safe}`;
+  const { error: upErr } = await supabase.storage.from("attachments").upload(path, file);
+  if (upErr) throw upErr;
+
+  const isImage = (file.type || "").startsWith("image/") || meta.kind === "image";
+  const title = (meta.title || file.name || "Untitled").trim();
+  const fileType = meta.fileType || detectScopeFileType({
+    mimeType: file.type,
+    fileName: file.name,
+    kind: isImage ? "image" : "document",
+  });
+
+  const { data, error } = await supabase
+    .from("project_scope_files")
+    .insert({
+      project_id: projectId,
+      uploaded_by: userId,
+      file_name: file.name,
+      file_path: path,
+      file_size: file.size,
+      mime_type: file.type,
+      kind: isImage ? "image" : "document",
+      title,
+      description: meta.description || "",
+      labels: meta.labels || [],
+      file_type: fileType,
+      collection: meta.collection === "reference" ? "reference" : "client",
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapScopeFile(data);
+}
+
+export async function addScopeLink(projectId, userId, { title, description = "", labels = [], linkUrl, collection = "client" }) {
+  if (!linkUrl?.trim()) throw new Error("Link URL is required.");
+  const url = linkUrl.trim();
+  const fileType = detectScopeFileType({ linkUrl: url });
+  const name = (title || url).trim() || "Link";
+
+  const { data, error } = await supabase
+    .from("project_scope_files")
+    .insert({
+      project_id: projectId,
+      uploaded_by: userId,
+      file_name: name,
+      file_path: null,
+      file_size: null,
+      mime_type: "text/uri-list",
+      kind: "link",
+      title: name,
+      description: description || "",
+      labels: labels || [],
+      link_url: url,
+      file_type: fileType,
+      collection: collection === "reference" ? "reference" : "client",
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapScopeFile(data);
+}
+
+export async function updateScopeFile(fileId, patch) {
+  const row = { updated_at: new Date().toISOString() };
+  if (patch.title !== undefined) {
+    row.title = patch.title;
+    row.file_name = patch.title;
+  }
+  if (patch.description !== undefined) row.description = patch.description;
+  if (patch.labels !== undefined) row.labels = patch.labels;
+  if (patch.linkUrl !== undefined) {
+    row.link_url = patch.linkUrl;
+    row.file_type = detectScopeFileType({
+      linkUrl: patch.linkUrl,
+      fileName: patch.title,
+      mimeType: patch.mimeType,
+    });
+  }
+  if (patch.fileType !== undefined) row.file_type = patch.fileType;
+  const { data, error } = await supabase.from("project_scope_files").update(row).eq("id", fileId).select().single();
+  if (error) throw error;
+  return mapScopeFile(data);
+}
+
+export async function deleteScopeFile(fileId, filePath) {
+  if (filePath) {
+    await supabase.storage.from("attachments").remove([filePath]);
+  }
+  const { error } = await supabase.from("project_scope_files").delete().eq("id", fileId);
+  if (error) throw error;
+}
+
+export async function uploadProjectImage(projectId, file, field = "cover") {
+  const ext = file.name.split(".").pop() || "png";
+  const path = `scope/${projectId}/${field}_${Date.now()}.${ext}`;
+  const { error: upErr } = await supabase.storage.from("attachments").upload(path, file, { upsert: true });
+  if (upErr) throw upErr;
+  const { data } = supabase.storage.from("attachments").getPublicUrl(path);
+  const patch = field === "client"
+    ? { clientImageUrl: data.publicUrl }
+    : { coverImageUrl: data.publicUrl };
+  await updateProject(projectId, patch);
+  return data.publicUrl;
 }
 
 export async function addProjectMember(projectId, email) {

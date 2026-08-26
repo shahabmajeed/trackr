@@ -8,6 +8,9 @@ Jira-style issue tracker powered by **Supabase Auth + Postgres**.
 2. In **SQL Editor**, run in order:
    - `supabase/schema.sql` (if tables not already created)
    - `supabase/extensions.sql` (attachments, links, watchers, story points, storage)
+   - `supabase/parent_subtasks.sql` / `supabase/hierarchy.sql` (issue hierarchy)
+   - `supabase/timer.sql` (auto time tracking)
+   - `supabase/project_scope.sql` (Scope page: project brief + client fields)
 3. Auth settings (Dashboard → Authentication):
    - Enable **Email** provider
    - Optionally require **email confirmation**

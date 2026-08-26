@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, User } from "lucide-react";
+import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, User, FileText } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
 import { C, selStyle, fmtMinutes, TYPES } from "./lib/theme";
@@ -10,6 +10,7 @@ import { Avatar } from "./components/ui";
 import AuthScreen from "./components/AuthScreen";
 import ProfileModal from "./components/ProfileModal";
 import IssueModal from "./components/IssueModal";
+import ScopeView from "./components/ScopeView";
 import {
   FilterBar, BoardView, BacklogView, SprintsView, ReportsView,
   CreateProjectModal, CreateSprintModal, StartSprintModal, ProjectSettingsModal,
@@ -20,6 +21,7 @@ const VIEW_LABELS = {
   backlog: "Backlog",
   sprints: "Sprints",
   reports: "Reports",
+  scope: "Scope",
 };
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -521,6 +523,7 @@ export default function App() {
           {navItem("board", "Board", LayoutGrid)}
           {navItem("backlog", "Backlog", ListTodo)}
           {navItem("sprints", "Sprints", Rocket)}
+          {navItem("scope", "Scope", FileText)}
           {navItem("reports", "Reports", Clock)}
         </div>
 
@@ -541,7 +544,13 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div style={{ padding: "16px 20px 0", display: "flex", alignItems: "center", gap: 10 }}>
           <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
-            {project.name} {view === "board" && activeSprint ? `· ${activeSprint.name}` : view === "board" ? "· Board" : view === "backlog" ? "· Backlog" : view === "sprints" ? "· Sprints" : "· Reports"}
+            {project.name}{" "}
+            {view === "board" && activeSprint ? `· ${activeSprint.name}`
+              : view === "board" ? "· Board"
+              : view === "backlog" ? "· Backlog"
+              : view === "sprints" ? "· Sprints"
+              : view === "scope" ? "· Scope"
+              : "· Reports"}
           </h1>
         </div>
 
@@ -588,6 +597,20 @@ export default function App() {
               sprints={projectSprints}
               project={project}
               onOpenIssue={setSelectedIssueId}
+            />
+          )}
+          {view === "scope" && (
+            <ScopeView
+              project={project}
+              currentUser={currentUser}
+              onUpdated={(updated) => {
+                setWorkspace((w) => ({
+                  ...w,
+                  projects: w.projects.map((p) =>
+                    p.id === updated.id ? { ...p, ...updated } : p
+                  ),
+                }));
+              }}
             />
           )}
         </div>
