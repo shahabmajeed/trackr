@@ -158,6 +158,7 @@ function allowedTypeOptions(issue, parentIssue) {
 
 export default function IssueModal({
   issue, project, users, allIssues, currentUser, onClose, onChanged, onDeleted, onOpenIssue, onCreateChild, onDeleteIssue,
+  caps,
 }) {
   const [labelInput, setLabelInput] = useState("");
   const [comment, setComment] = useState("");
@@ -175,6 +176,16 @@ export default function IssueModal({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [tab, setTab] = useState("comments");
   const fileRef = useRef(null);
+
+  const canEdit = caps ? !caps.isReadOnly && caps.canEditIssue : true;
+  const canStatus = caps ? !caps.isReadOnly && caps.canChangeStatus : true;
+  const canComment = caps ? !caps.isReadOnly && caps.canComment : true;
+  const canTimeLog = caps ? !caps.isReadOnly && caps.canTimeLog : true;
+  const canAttach = caps ? !caps.isReadOnly && caps.canAttach : true;
+  const canDelete = caps ? !caps.isReadOnly && caps.canDeleteIssue : false;
+  const canCreateChild = caps
+    ? !caps.isReadOnly && caps.canCreateSubtask && onCreateChild
+    : onCreateChild;
 
   useEffect(() => {
     setTitle(issue.title || "");
@@ -241,6 +252,7 @@ export default function IssueModal({
   const patchLocal = (partial) => onChanged({ ...issue, ...partial });
 
   const changeStatus = async (newStatusId) => {
+    if (!canStatus) return;
     if (newStatusId === issue.status) return;
     const prev = { ...issue };
     try {
@@ -270,6 +282,7 @@ export default function IssueModal({
   };
 
   const update = async (patch) => {
+    if (!canEdit) return;
     if (patch.status != null) {
       await changeStatus(patch.status);
       return;
@@ -317,6 +330,7 @@ export default function IssueModal({
   };
 
   const submitComment = async () => {
+    if (!canComment) return;
     if (!comment.trim()) return;
     try {
       const c = await api.addComment(issue.id, currentUser.id, comment.trim());
@@ -349,6 +363,7 @@ export default function IssueModal({
   };
 
   const onLogTime = async (mins, note, date) => {
+    if (!canTimeLog) return;
     try {
       const log = await api.addTimeLog(issue.id, currentUser.id, mins, note, null, date);
       patchLocal({ timeLogs: [...timeLogs, log] });
@@ -496,19 +511,21 @@ export default function IssueModal({
             {watching ? <Eye size={16} /> : <EyeOff size={16} />}
             {watching ? "Watching" : "Watch"}
           </button>
-          <Trash2
-            size={16}
-            color={C.faint}
-            style={{ cursor: "pointer" }}
-            title="Delete issue"
-            onClick={async () => {
-              const ok = await onDeleteIssue?.();
-              if (ok) {
-                onDeleted?.();
-                onClose();
-              }
-            }}
-          />
+          {canDelete && onDeleteIssue && (
+            <Trash2
+              size={16}
+              color={C.faint}
+              style={{ cursor: "pointer" }}
+              title="Delete issue"
+              onClick={async () => {
+                const ok = await onDeleteIssue?.();
+                if (ok) {
+                  onDeleted?.();
+                  onClose();
+                }
+              }}
+            />
+          )}
           <X size={18} color={C.faint} style={{ cursor: "pointer" }} onClick={onClose} />
         </div>
       </div>
@@ -518,6 +535,7 @@ export default function IssueModal({
           <input
             data-field="issue-title"
             value={title}
+            readOnly={!canEdit}
             onChange={(e) => setTitle(e.target.value)}
             onFocus={(e) => {
               e.currentTarget.style.borderColor = C.primary;
@@ -641,7 +659,7 @@ export default function IssueModal({
                 </div>
               ))}
             </div>
-            <button onClick={() => fileRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={() => canAttach && fileRef.current?.click()} disabled={!canAttach} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 10px", fontSize: 12.5, fontWeight: 600, cursor: canAttach ? "pointer" : "not-allowed", opacity: canAttach ? 1 : 0.5 }}>
               <Plus size={13} /> Upload file
             </button>
             <input ref={fileRef} type="file" hidden onChange={onFile} />

@@ -107,6 +107,7 @@ export default function ScopeFilesPanel({
   allScopeFiles,
   setScopeFiles,
   onUpdated,
+  readOnly = false,
 }) {
   const library = allScopeFiles || scopeFiles;
   const [view, setView] = useState("grid");
@@ -277,12 +278,16 @@ export default function ScopeFilesPanel({
       <button type="button" style={iconBtn} title="View details" onClick={() => setDetail(f)}>
         <Eye size={14} />
       </button>
-      <button type="button" style={iconBtn} title="Edit" onClick={() => openEdit(f)}>
-        <Pencil size={14} />
-      </button>
-      <button type="button" style={{ ...iconBtn, color: C.danger }} title="Delete" onClick={() => removeFile(f)}>
-        <Trash2 size={14} />
-      </button>
+      {!readOnly && (
+        <>
+          <button type="button" style={iconBtn} title="Edit" onClick={() => openEdit(f)}>
+            <Pencil size={14} />
+          </button>
+          <button type="button" style={{ ...iconBtn, color: C.danger }} title="Delete" onClick={() => removeFile(f)}>
+            <Trash2 size={14} />
+          </button>
+        </>
+      )}
       {!compact && openUrl(f) && (
         <a
           href={openUrl(f)}
@@ -312,12 +317,16 @@ export default function ScopeFilesPanel({
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <ViewToggle />
-            <button type="button" onClick={() => openAdd("link")} style={secondaryBtn}>
-              <Link2 size={14} /> Add link
-            </button>
-            <button type="button" onClick={() => openAdd("upload")} style={primaryBtn}>
-              <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} /> Upload file
-            </button>
+            {!readOnly && (
+              <>
+                <button type="button" onClick={() => openAdd("link")} style={secondaryBtn}>
+                  <Link2 size={14} /> Add link
+                </button>
+                <button type="button" onClick={() => openAdd("upload")} style={primaryBtn}>
+                  <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} /> Upload file
+                </button>
+              </>
+            )}
           </div>
         </div>
 

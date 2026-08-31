@@ -249,7 +249,9 @@ function SummaryTab({
   );
 }
 
-export default function ScopeView({ project, currentUser, onUpdated }) {
+export default function ScopeView({ project, currentUser, onUpdated, caps }) {
+  const canEditScope = caps ? caps.canEditScope : true;
+  const canEditMeta = caps ? caps.canEditProjectMeta : true;
   const [tab, setTab] = useState("summary"); // summary | project | client | files
   const [name, setName] = useState(project.name || "");
   const [key, setKey] = useState(project.key || "");
@@ -539,7 +541,7 @@ export default function ScopeView({ project, currentUser, onUpdated }) {
             Project brief, client profile, and files for <strong style={{ color: C.text }}>{name || project.name}</strong>
           </p>
         </div>
-        <button type="button" disabled={extracting || busy} onClick={() => extractRef.current?.click()} style={secondaryBtn}>
+        <button type="button" disabled={extracting || busy || !canEditScope} onClick={() => extractRef.current?.click()} style={secondaryBtn}>
           <Sparkles size={14} /> {extracting ? "Extracting…" : "Auto-fill from PDF / DOC"}
         </button>
         <input ref={extractRef} type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" hidden onChange={onExtractFile} />
@@ -668,7 +670,9 @@ export default function ScopeView({ project, currentUser, onUpdated }) {
                     ) : (
                       <span style={{ flex: 1, color: C.text }}>{f.title || f.fileName}</span>
                     )}
-                    <Trash2 size={14} color={C.faint} style={{ cursor: "pointer" }} onClick={() => onRemoveFile(f)} />
+                    {canEditScope && (
+                      <Trash2 size={14} color={C.faint} style={{ cursor: "pointer" }} onClick={() => onRemoveFile(f)} />
+                    )}
                   </div>
                 );
               })}
@@ -676,15 +680,17 @@ export default function ScopeView({ project, currentUser, onUpdated }) {
                 <div style={{ fontSize: 12.5, color: C.faint }}>No handover files yet. Upload the original brief or SOW.</div>
               )}
             </div>
-            <button type="button" onClick={() => docRef.current?.click()} style={secondaryBtn}>
-              <Upload size={14} /> Upload reference file
-            </button>
+            {canEditScope && (
+              <button type="button" onClick={() => docRef.current?.click()} style={secondaryBtn}>
+                <Upload size={14} /> Upload reference file
+              </button>
+            )}
             <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp,image/*,application/pdf" hidden onChange={onUploadDoc} />
           </Field>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
             <button type="button" onClick={() => setTab("summary")} style={{ ...secondaryBtn, color: C.subtle }}>Cancel</button>
-            <button type="button" disabled={busy} onClick={saveProjectTab} style={primaryBtn}>Save project</button>
+            <button type="button" disabled={busy || !canEditScope} onClick={saveProjectTab} style={primaryBtn}>Save project</button>
           </div>
         </div>
       )}
@@ -753,7 +759,7 @@ export default function ScopeView({ project, currentUser, onUpdated }) {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
             <button type="button" onClick={() => setTab("summary")} style={{ ...secondaryBtn, color: C.subtle }}>Cancel</button>
-            <button type="button" disabled={busy} onClick={saveClientTab} style={primaryBtn}>Save client</button>
+            <button type="button" disabled={busy || !canEditScope} onClick={saveClientTab} style={primaryBtn}>Save client</button>
           </div>
         </div>
       )}
@@ -766,6 +772,7 @@ export default function ScopeView({ project, currentUser, onUpdated }) {
           allScopeFiles={scopeFiles}
           setScopeFiles={setScopeFiles}
           onUpdated={onUpdated}
+          readOnly={!canEditScope}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { DEFAULT_STATUSES } from "./theme";
+import { normalizeRole } from "./privileges";
 import {
   validateParentChild,
   validateRootCreate,
@@ -25,6 +26,17 @@ export function mapStatus(s) {
 }
 
 export function mapProject(p, members = [], statuses = [], scopeFiles = []) {
+  const memberRecords = Object.fromEntries(
+    (members || []).map((m) => [
+      m.user_id,
+      {
+        role: m.role || "developer",
+        status: m.status || "active",
+        privileges: m.privileges || {},
+        roleLabel: m.role_label || "",
+      },
+    ])
+  );
   return {
     id: p.id,
     key: p.key,
@@ -41,8 +53,13 @@ export function mapProject(p, members = [], statuses = [], scopeFiles = []) {
     clientWebsite: p.client_website || "",
     clientImageUrl: p.client_image_url || null,
     updatedAt: p.updated_at ? new Date(p.updated_at).getTime() : null,
-    members: members.map((m) => m.user_id),
-    memberRoles: Object.fromEntries(members.map((m) => [m.user_id, m.role])),
+    roleDefaults: p.role_defaults || {},
+    members: (members || []).map((m) => m.user_id),
+    memberRecords,
+    memberRoles: Object.fromEntries((members || []).map((m) => [m.user_id, m.role])),
+    memberStatus: Object.fromEntries((members || []).map((m) => [m.user_id, m.status || "active"])),
+    memberPrivileges: Object.fromEntries((members || []).map((m) => [m.user_id, m.privileges || {}])),
+    memberRoleLabels: Object.fromEntries((members || []).map((m) => [m.user_id, m.role_label || ""])),
     statuses: statuses.map(mapStatus).sort((a, b) => a.sortOrder - b.sortOrder),
     scopeFiles: scopeFiles.map(mapScopeFile),
   };
@@ -304,7 +321,7 @@ export async function removeAvatar(userId) {
 export async function loadWorkspace(userId) {
   const { data: memberships, error: mErr } = await supabase
     .from("project_members")
-    .select("project_id, role")
+    .select("project_id, role, status, privileges")
     .eq("user_id", userId);
   if (mErr) throw mErr;
 
@@ -446,7 +463,9 @@ export async function createProject(ownerId, name, key) {
   const { error: mErr } = await supabase.from("project_members").insert({
     project_id: project.id,
     user_id: ownerId,
-    role: "owner",
+    role: "super_admin",
+    status: "active",
+    privileges: {},
   });
   if (mErr && mErr.code !== "23505") throw mErr;
 
@@ -454,7 +473,12 @@ export async function createProject(ownerId, name, key) {
   const { data: statuses, error: sErr } = await supabase.from("statuses").insert(statusRows).select();
   if (sErr) throw sErr;
 
-  return mapProject(project, [{ user_id: ownerId, role: "owner" }], statuses, []);
+  return mapProject(
+    project,
+    [{ user_id: ownerId, role: "super_admin", status: "active", privileges: {} }],
+    statuses,
+    []
+  );
 }
 
 export async function updateProject(projectId, patch) {
@@ -599,7 +623,7 @@ export async function uploadProjectImage(projectId, file, field = "cover") {
   return data.publicUrl;
 }
 
-export async function addProjectMember(projectId, email) {
+export async function addProjectMember(projectId, email, { role = "developer", privileges = {}, roleLabel = "" } = {}) {
   const { data: profile, error: pErr } = await supabase
     .from("profiles")
     .select("*")
@@ -608,16 +632,60 @@ export async function addProjectMember(projectId, email) {
   if (pErr) throw pErr;
   if (!profile) throw new Error("No Trackr account found with that email.");
 
+  const safeRole = role === "super_admin" ? "developer" : normalizeRole(role);
+  const label = safeRole === "custom" ? String(roleLabel || "").trim() : "";
+
   const { error } = await supabase.from("project_members").insert({
     project_id: projectId,
     user_id: profile.id,
-    role: "member",
+    role: safeRole,
+    status: "active",
+    privileges: privileges || {},
+    role_label: label,
   });
   if (error) {
     if (error.code === "23505") throw new Error("Already a member.");
     throw error;
   }
   return mapProfile(profile);
+}
+
+export async function updateProjectMember(projectId, userId, patch) {
+  const row = {};
+  if (patch.role !== undefined) row.role = normalizeRole(patch.role);
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.privileges !== undefined) row.privileges = patch.privileges;
+  if (patch.roleLabel !== undefined) row.role_label = String(patch.roleLabel || "").trim();
+  if (patch.role !== undefined && patch.role !== "custom") row.role_label = "";
+  const { data, error } = await supabase
+    .from("project_members")
+    .update(row)
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function removeProjectMember(projectId, userId) {
+  const { error } = await supabase
+    .from("project_members")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+export async function updateProjectRoleDefaults(projectId, roleDefaults) {
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ role_defaults: roleDefaults, updated_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data.role_defaults || {};
 }
 
 export async function addStatus(projectId, label, color) {

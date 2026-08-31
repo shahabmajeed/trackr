@@ -6,6 +6,14 @@ import { C, TYPES, PRIORITIES, inputStyle, selStyle, fmtDate, fmtDateRange, fmtM
 import { ROOT_CREATE_TYPES } from "../lib/issueHierarchy";
 import { Avatar, Modal, Field, Chip } from "./ui";
 import { TypeIcon, StatusBadge } from "./IssueModal";
+import { ReportsChartsPanel } from "./ReportsCharts";
+import { ReportsTimesheet } from "./ReportsTimesheet";
+import {
+  ReportsDetailsEmpty,
+  ReportsActivityAgenda,
+  ReportsTicketAgenda,
+  ReportsPeopleAgenda,
+} from "./ReportsDetailsList";
 
 export function FilterBar({ search, setSearch, allLabels, labelFilter, toggleLabel, onlyMine, setOnlyMine, currentUser }) {
   return (
@@ -140,7 +148,7 @@ export function BoardView({ issues, users, allIssues, sprint, statuses, onOpen, 
               {colIssues.map((issue) => (
                 <IssueCard key={issue.id} issue={issue} users={users} allIssues={allIssues || issues} onClick={() => onOpen(issue.id)} />
               ))}
-              {isFirstCol && (
+              {isFirstCol && onCreate && (
                 creatingIn === col.id ? (
                   <CreateIssueInline defaultStatus={col.id} onCancel={() => setCreatingIn(null)}
                     onCreate={(data) => { onCreate(data); setCreatingIn(null); }} />
@@ -354,20 +362,22 @@ export function BacklogView({ issues, sprints, users, statuses, onOpen, onStatus
               <div style={{ padding: "6px 4px" }}>
                 <CreateIssueInline onCancel={() => setCreatingIn(null)} onCreate={(data) => { onCreate({ ...data, sprintId: sprint.id }); setCreatingIn(null); }} />
               </div>
-            ) : (
+            ) : onCreate ? (
               <button onClick={() => setCreatingIn(sprint.id)} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: C.subtle, fontSize: 13, cursor: "pointer", padding: "6px 12px" }}>
                 <Plus size={14} /> Create issue
               </button>
-            )}
+            ) : null}
           </Section>
         );
       })}
 
-      <div style={{ marginBottom: 10 }}>
-        <button onClick={onCreateSprint} style={{ fontSize: 12.5, color: C.primary, background: "transparent", border: "none", cursor: "pointer", fontWeight: 600, padding: "4px 0 12px" }}>
-          + Create sprint
-        </button>
-      </div>
+      {onCreateSprint && (
+        <div style={{ marginBottom: 10 }}>
+          <button onClick={onCreateSprint} style={{ fontSize: 12.5, color: C.primary, background: "transparent", border: "none", cursor: "pointer", fontWeight: 600, padding: "4px 0 12px" }}>
+            + Create sprint
+          </button>
+        </div>
+      )}
 
       {(() => {
         const backlogIssues = issues.filter((i) => !i.sprintId);
@@ -383,11 +393,11 @@ export function BacklogView({ issues, sprints, users, statuses, onOpen, onStatus
               <div style={{ padding: "6px 4px" }}>
                 <CreateIssueInline onCancel={() => setCreatingIn(null)} onCreate={(data) => { onCreate({ ...data, sprintId: null }); setCreatingIn(null); }} />
               </div>
-            ) : (
+            ) : onCreate ? (
               <button onClick={() => setCreatingIn("backlog")} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: C.subtle, fontSize: 13, cursor: "pointer", padding: "6px 12px" }}>
                 <Plus size={14} /> Create issue
               </button>
-            )}
+            ) : null}
           </Section>
         );
       })()}
@@ -401,7 +411,9 @@ export function SprintsView({ sprints, issues, onStartSprint, onCompleteSprint, 
     <div style={{ padding: 20, maxWidth: 720 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Sprints</h2>
-        <button onClick={onCreateSprint} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>+ Sprint</button>
+        {onCreateSprint && (
+          <button onClick={onCreateSprint} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>+ Sprint</button>
+        )}
       </div>
       {sprints.length === 0 && <div style={{ color: C.faint, fontSize: 13.5 }}>No sprints yet.</div>}
       {sprints.map((s) => {
@@ -449,6 +461,7 @@ export function SprintsView({ sprints, issues, onStartSprint, onCompleteSprint, 
 
 export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
   const [period, setPeriod] = useState("week"); // day | week | month | all | custom | range
+  const [reportTab, setReportTab] = useState("overview"); // overview | details | timesheet
   const [section, setSection] = useState("tickets"); // tickets | people | activity
   const [customDate, setCustomDate] = useState(toDateInputValue(Date.now()));
   const [rangeFrom, setRangeFrom] = useState(toDateInputValue(Date.now() - 6 * 86400000));
@@ -516,25 +529,6 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
   }
   const userRows = Object.entries(byUser).sort((a, b) => b[1] - a[1]);
 
-  const byDay = {};
-  for (const l of logs) {
-    const d = new Date(l.date);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    if (!byDay[key]) {
-      byDay[key] = {
-        sort: d.getTime(),
-        label: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
-        minutes: 0,
-      };
-    }
-    byDay[key].minutes += l.minutes;
-  }
-  const dayRows = Object.values(byDay).sort((a, b) => b.sort - a.sort);
-
-  const maxIssueMins = issueRows[0]?.minutes || 1;
-  const maxUserMins = userRows[0]?.[1] || 1;
-  const maxDayMins = dayRows[0]?.minutes || 1;
-
   const periodSubtitle = () => {
     if (period === "custom" && customDate) {
       return new Date(fromDateInputValue(customDate)).toLocaleDateString(undefined, {
@@ -549,8 +543,8 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
 
   const issuesWithTime = issueRows.length;
   const contributors = userRows.length;
-  const showDailyBreakdown = dayRows.length > 0 && period !== "day" && period !== "custom";
   const rangeInvalid = period === "range" && rangeFrom && rangeTo && rangeFrom > rangeTo;
+  const statuses = project?.statuses || [];
 
   const selectPeriod = (id) => {
     setPeriod(id);
@@ -594,6 +588,22 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
     </button>
   );
 
+  const reportTabBtn = (id, label) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => setReportTab(id)}
+      style={{
+        background: reportTab === id ? C.primarySoft : "transparent",
+        color: reportTab === id ? C.primary : C.subtle,
+        border: `1px solid ${reportTab === id ? C.primary : C.border}`,
+        borderRadius: 6, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+
   const StatCard = ({ label, value, sub }) => (
     <div style={{
       background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 18px",
@@ -605,14 +615,8 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
     </div>
   );
 
-  const Bar = ({ pct, color = C.primary }) => (
-    <div style={{ height: 6, background: C.bg, borderRadius: 3, overflow: "hidden", flex: 1, minWidth: 60 }}>
-      <div style={{ width: `${Math.max(4, pct)}%`, height: "100%", background: color, borderRadius: 3 }} />
-    </div>
-  );
-
   return (
-    <div style={{ padding: "20px 24px 32px", maxWidth: 960 }}>
+    <div style={{ padding: "20px 24px 32px", maxWidth: 1100 }}>
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 4px", color: C.text }}>Time reports</h2>
         <p style={{ fontSize: 13, color: C.subtle, margin: 0 }}>
@@ -676,6 +680,13 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
         </div>
       )}
 
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {reportTabBtn("overview", "Overview")}
+        {reportTabBtn("details", "Details")}
+        {reportTabBtn("timesheet", "Timesheet")}
+      </div>
+
+      {reportTab !== "timesheet" && (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
         <StatCard
           label="Project total"
@@ -690,22 +701,33 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
           sub={issuesWithTime ? "in selected period" : undefined}
         />
       </div>
+      )}
 
-      {showDailyBreakdown && (
-        <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 18px", marginBottom: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 14 }}>Daily breakdown</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {dayRows.slice(0, 31).map((row) => (
-              <div key={row.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 12, color: C.subtle, width: 100, flexShrink: 0 }}>{row.label}</span>
-                <Bar pct={(row.minutes / maxDayMins) * 100} />
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, width: 52, textAlign: "right" }}>{fmtMinutes(row.minutes)}</span>
-              </div>
-            ))}
-          </div>
+      {reportTab === "overview" && (
+        <ReportsChartsPanel
+          logs={logs}
+          allLogs={allLogs}
+          issues={issues}
+          statuses={statuses}
+          periodLabel={periodSubtitle()}
+          onOpenIssue={onOpenIssue}
+          showCalendar={false}
+        />
+      )}
+
+      {reportTab === "timesheet" && (
+        <div style={{ marginBottom: 32 }}>
+          <ReportsTimesheet
+            allLogs={allLogs}
+            users={users}
+            project={project}
+            onOpenIssue={onOpenIssue}
+          />
         </div>
       )}
 
+      {reportTab === "details" && (
+        <>
       <div style={{ display: "flex", gap: 16, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
         {sectionBtn("tickets", `By ticket (${issueRows.length})`)}
         {sectionBtn("people", `By person (${userRows.length})`)}
@@ -713,132 +735,38 @@ export function ReportsView({ issues, users, sprints, project, onOpenIssue }) {
       </div>
 
       {logs.length === 0 && (
-        <div style={{
-          background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: 48,
-          textAlign: "center", color: C.subtle,
-        }}>
-          <Clock size={32} color={C.faint} style={{ marginBottom: 12 }} />
-          <div style={{ fontWeight: 700, color: C.text, marginBottom: 4 }}>No time logged for {periodSubtitle()}</div>
-          <div style={{ fontSize: 13 }}>Move issues to In Progress for auto-tracking, or log time manually on a ticket.</div>
-        </div>
+        <ReportsDetailsEmpty periodLabel={periodSubtitle()} />
       )}
 
       {section === "tickets" && issueRows.length > 0 && (
-        <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr 120px 80px 48px", gap: 12,
-            padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`,
-            fontSize: 11, fontWeight: 700, color: C.faint, textTransform: "uppercase", letterSpacing: 0.3,
-          }}>
-            <span>Ticket</span>
-            <span>Time</span>
-            <span>Share</span>
-            <span>Logs</span>
-          </div>
-          {issueRows.map(({ issue, minutes, count }) => (
-            <div
-              key={issue.id}
-              onClick={() => onOpenIssue?.(issue.id)}
-              style={{
-                display: "grid", gridTemplateColumns: "1fr 120px 80px 48px", gap: 12, alignItems: "center",
-                padding: "12px 16px", borderBottom: `1px solid ${C.border}`, cursor: onOpenIssue ? "pointer" : "default",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = C.bg; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
-            >
-              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                    <TypeIcon type={issue.type} size={12} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: C.primary }}>{issue.key}</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{issue.title}</div>
-                </div>
-                <Bar pct={(minutes / maxIssueMins) * 100} color={C.primary} />
-              </div>
-              <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{fmtMinutes(minutes)}</span>
-              <span style={{ fontSize: 12, color: C.subtle }}>
-                {projectTotal ? `${Math.round((minutes / projectTotal) * 100)}%` : "—"}
-              </span>
-              <span style={{ fontSize: 12, color: C.faint }}>{count}</span>
-            </div>
-          ))}
-        </div>
+        <ReportsTicketAgenda
+          issueRows={issueRows}
+          projectTotal={projectTotal}
+          onOpenIssue={onOpenIssue}
+        />
       )}
 
-      {section === "people" && userRows.length > 0 && (
-        <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          {userRows.map(([uid, mins]) => {
-            const u = users.find((x) => x.id === uid);
-            const userLogs = logs.filter((l) => l.userId === uid);
-            const tickets = new Set(userLogs.map((l) => l.issue.id)).size;
-            return (
-              <div key={uid} style={{
-                display: "flex", alignItems: "center", gap: 14, padding: "14px 16px",
-                borderBottom: `1px solid ${C.border}`,
-              }}>
-                <Avatar user={u} size={36} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{u?.name || "Unknown"}</div>
-                  <div style={{ fontSize: 12, color: C.subtle, marginBottom: 6 }}>
-                    {fmtMinutes(mins)} · {tickets} ticket{tickets !== 1 ? "s" : ""} · {Math.round((mins / projectTotal) * 100)}% of project
-                  </div>
-                  <Bar pct={(mins / maxUserMins) * 100} color="#8F7EE7" />
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{fmtMinutes(mins)}</div>
-              </div>
-            );
-          })}
-        </div>
+      {section === "people" && logs.length > 0 && (
+        <ReportsPeopleAgenda
+          userRows={userRows}
+          logs={logs}
+          projectTotal={projectTotal}
+          users={users}
+          onOpenIssue={onOpenIssue}
+        />
       )}
 
       {section === "activity" && logs.length > 0 && (
-        <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8 }}>
-          {logs.map((l) => {
-            const u = users.find((x) => x.id === l.userId);
-            const isAuto = (l.note || "").toLowerCase().includes("auto-tracked");
-            return (
-              <div key={l.id} style={{
-                display: "flex", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.border}`, alignItems: "flex-start",
-              }}>
-                <Avatar user={u} size={28} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: C.text }}>
-                    <span style={{ fontWeight: 800 }}>{fmtMinutes(l.minutes)}</span>
-                    {" on "}
-                    <span
-                      style={{ color: C.primary, fontWeight: 700, cursor: onOpenIssue ? "pointer" : "default" }}
-                      onClick={() => onOpenIssue?.(l.issue.id)}
-                    >
-                      {l.issue.key}
-                    </span>
-                    {" · "}
-                    <span style={{ color: C.subtle }}>{l.issue.title}</span>
-                  </div>
-                  {l.note && (
-                    <div style={{ fontSize: 12, color: C.subtle, marginTop: 3, display: "flex", alignItems: "center", gap: 6 }}>
-                      {isAuto && <span style={{ fontSize: 10, fontWeight: 700, background: C.progBg, color: C.progText, padding: "1px 6px", borderRadius: 3 }}>AUTO</span>}
-                      {l.note}
-                    </div>
-                  )}
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
-                    {new Date(l.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.faint }}>
-                    {new Date(l.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <ReportsActivityAgenda logs={logs} users={users} onOpenIssue={onOpenIssue} />
+      )}
+        </>
       )}
 
-      <div style={{ marginTop: 16, fontSize: 12, color: C.faint }}>
-        {sprints.length} sprint{sprints.length !== 1 ? "s" : ""} · {project?.key || ""} project
-      </div>
+      {reportTab !== "timesheet" && (
+        <div style={{ marginTop: 16, fontSize: 12, color: C.faint }}>
+          {sprints.length} sprint{sprints.length !== 1 ? "s" : ""} · {project?.key || ""} project
+        </div>
+      )}
     </div>
   );
 }
@@ -929,94 +857,4 @@ export function StartSprintModal({ sprint, onClose, onStart }) {
   );
 }
 
-export function ProjectSettingsModal({ project, users, onClose, onAddMember, error, onAddStatus, onDeleteStatus }) {
-  const [email, setEmail] = useState("");
-  const [statusLabel, setStatusLabel] = useState("");
-  const [statusColor, setStatusColor] = useState("#EAE6FF");
-  const members = users.filter((u) => project.members.includes(u.id));
-
-  const addCustomStatus = () => {
-    if (!statusLabel.trim()) return;
-    onAddStatus(statusLabel.trim(), { bg: statusColor, text: contrastText(statusColor) });
-    setStatusLabel("");
-  };
-
-  return (
-    <Modal onClose={onClose} width={460}>
-      <div style={{ padding: 22 }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, margin: "0 0 4px", color: C.text }}>{project.name} settings</h2>
-        <div style={{ fontSize: 12.5, color: C.faint, marginBottom: 16 }}>Key: {project.key}</div>
-
-        <Field label="Members">
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {members.map((u) => (
-              <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Avatar user={u} size={26} /><span style={{ fontSize: 13.5 }}>{u.name}</span>
-                <span style={{ fontSize: 12, color: C.faint }}>{u.email}</span>
-              </div>
-            ))}
-          </div>
-        </Field>
-        <Field label="Invite by email">
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teammate@company.com" style={{ ...inputStyle, flex: 1 }}
-              onKeyDown={(e) => { if (e.key === "Enter" && email.trim()) { onAddMember(email.trim()); setEmail(""); } }} />
-            <button onClick={() => { if (email.trim()) { onAddMember(email.trim()); setEmail(""); } }}
-              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "0 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Add</button>
-          </div>
-          {error && <div style={{ fontSize: 12, color: C.danger, marginTop: 6 }}>{error}</div>}
-          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>Only people who already have a Trackr account can be added.</div>
-        </Field>
-
-        <Field label="Workflow statuses">
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-            {project.statuses.map((s) => (
-              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ background: s.bg, color: s.text, fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 4, flex: 1 }}>{s.label}</span>
-                {s.fixed ? (
-                  <span title="This status can't be removed" style={{ fontSize: 11, color: C.faint }}>fixed</span>
-                ) : (
-                  <Trash2 size={14} color={C.faint} style={{ cursor: "pointer" }} onClick={() => onDeleteStatus(s.id)} title="Remove status" />
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input value={statusLabel} onChange={(e) => setStatusLabel(e.target.value)} placeholder="e.g. In Review"
-              style={{ ...inputStyle, flex: 1, minWidth: 140 }}
-              onKeyDown={(e) => { if (e.key === "Enter") addCustomStatus(); }} />
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", border: `1px solid ${C.border}`, borderRadius: 4, padding: "4px 8px", background: "#fff" }} title="Pick a color">
-              <span style={{ width: 22, height: 22, borderRadius: 4, background: statusColor, border: `1px solid ${C.borderStrong}`, flexShrink: 0 }} />
-              <input
-                type="color"
-                value={statusColor.length === 7 ? statusColor : "#EAE6FF"}
-                onChange={(e) => setStatusColor(e.target.value)}
-                style={{ width: 28, height: 28, border: "none", padding: 0, background: "transparent", cursor: "pointer" }}
-              />
-            </label>
-            <button onClick={addCustomStatus}
-              style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "0 12px", height: 34, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Add</button>
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-            {STATUS_COLOR_PRESETS.map((hex) => (
-              <button
-                key={hex}
-                type="button"
-                title={hex}
-                onClick={() => setStatusColor(hex)}
-                style={{
-                  width: 20, height: 20, borderRadius: 4, background: hex, cursor: "pointer",
-                  border: statusColor.toLowerCase() === hex.toLowerCase() ? `2px solid ${C.primary}` : `1px solid ${C.border}`,
-                  padding: 0,
-                }}
-              />
-            ))}
-          </div>
-          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>
-            To Do, Reopen, In Progress, and Done are fixed. Add more with any color.
-          </div>
-        </Field>
-      </div>
-    </Modal>
-  );
-}
+export { default as ProjectSettingsModal } from "./ProjectSettingsModal";

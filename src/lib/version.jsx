@@ -1,6 +1,6 @@
 import { C } from "./theme";
 
-const version = import.meta.env.VITE_APP_VERSION || "1.1.0.1";
+const version = import.meta.env.VITE_APP_VERSION || "1.2.0.1";
 const buildNum = import.meta.env.VITE_BUILD_NUMBER || "";
 const sha = (import.meta.env.VITE_BUILD_SHA || "dev").slice(0, 7);
 

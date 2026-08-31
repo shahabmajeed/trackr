@@ -5,6 +5,7 @@ import * as api from "./lib/api";
 import { C, selStyle, fmtMinutes, TYPES } from "./lib/theme";
 import { typeLabel } from "./lib/issueHierarchy";
 import { BuildVersion } from "./lib/version";
+import { getProjectCapabilities, canCreateIssueType, countSuperAdmins, isSuperAdminRole, normalizeRole, canEditMemberRole, assignableRolesForEditor, inviteRolesForEditor, canInactiveMember, canRemoveMember } from "./lib/privileges";
 import { toastSuccess, toastError, toastInfo, toastConfirm } from "./lib/toast";
 import { Avatar } from "./components/ui";
 import AuthScreen from "./components/AuthScreen";
@@ -218,6 +219,38 @@ export default function App() {
   const projectSprints = sprints.filter((s) => s.projectId === project.id);
   const activeSprint = projectSprints.find((s) => s.status === "active");
   const members = users.filter((u) => project.members.includes(u.id));
+  const caps = getProjectCapabilities(project, currentUser.id);
+
+  const patchProject = (patch) => {
+    setWorkspace((w) => ({
+      ...w,
+      projects: w.projects.map((p) => (p.id === project.id ? { ...p, ...patch } : p)),
+    }));
+  };
+
+  const patchMemberLocal = (userId, patch) => {
+    setWorkspace((w) => ({
+      ...w,
+      projects: w.projects.map((p) => {
+        if (p.id !== project.id) return p;
+        const rec = p.memberRecords?.[userId] || {};
+        const nextRec = {
+          role: patch.role ?? rec.role,
+          status: patch.status ?? rec.status,
+          privileges: patch.privileges ?? rec.privileges ?? {},
+          roleLabel: patch.roleLabel !== undefined ? patch.roleLabel : rec.roleLabel ?? "",
+        };
+        return {
+          ...p,
+          memberRecords: { ...p.memberRecords, [userId]: nextRec },
+          memberRoles: { ...p.memberRoles, [userId]: nextRec.role },
+          memberStatus: { ...p.memberStatus, [userId]: nextRec.status },
+          memberPrivileges: { ...p.memberPrivileges, [userId]: nextRec.privileges },
+          memberRoleLabels: { ...p.memberRoleLabels, [userId]: nextRec.roleLabel },
+        };
+      }),
+    }));
+  };
 
   const allLabels = [...new Set(projectIssues.flatMap((i) => i.labels))];
   const passesFilter = (issue) => {
@@ -237,6 +270,10 @@ export default function App() {
   };
 
   const createIssue = async (data) => {
+    if (!canCreateIssueType(caps, data.type || "task")) {
+      toastError("You do not have permission to create this issue type.");
+      throw new Error("Forbidden");
+    }
     try {
       const statusId = data.status || project.statuses[0]?.id;
       const issue = await api.createIssue({
@@ -264,10 +301,15 @@ export default function App() {
   };
 
   const updateIssueLocal = async (id, patch) => {
+    if (caps.isReadOnly) return;
     const prev = issues.find((i) => i.id === id);
     if (!prev) return;
 
     if (patch.status != null && patch.status !== prev.status) {
+      if (!caps.canChangeStatus) {
+        toastError("You do not have permission to change status.");
+        return;
+      }
       try {
         const { updated, newLog } = await api.applyStatusChangeWithTimer({
           issue: prev,
@@ -294,6 +336,11 @@ export default function App() {
       return;
     }
 
+    if (!caps.canEditIssue) {
+      toastError("You do not have permission to edit issues.");
+      return;
+    }
+
     setIssues((list) => list.map((i) => (i.id === id ? { ...i, ...patch } : i)));
     try {
       await api.updateIssue(id, patch, currentUser.id, prev || {});
@@ -314,6 +361,10 @@ export default function App() {
   };
 
   const deleteIssue = async (id) => {
+    if (!caps.canDeleteIssue) {
+      toastError("You do not have permission to delete issues.");
+      return false;
+    }
     const target = issues.find((i) => i.id === id);
     const childCount = issues.filter((i) => i.parentId === id).length;
     const label = target ? `${target.key} — ${target.title}` : "this issue";
@@ -335,6 +386,10 @@ export default function App() {
   };
 
   const startSprint = async (sprintId, startDate, endDate) => {
+    if (!caps.canManageSprints) {
+      toastError("You do not have permission to manage sprints.");
+      return;
+    }
     try {
       await api.startSprint(project.id, sprintId, { startDate, endDate });
       setStartSprintTarget(null);
@@ -354,6 +409,10 @@ export default function App() {
     startSprint(sprintId, sprint.startDate, sprint.endDate);
   };
   const updateSprintDetails = async (sprintId, patch) => {
+    if (!caps.canManageSprints) {
+      toastError("You do not have permission to manage sprints.");
+      return;
+    }
     try {
       const updated = await api.updateSprint(sprintId, patch);
       setWorkspace((w) => ({
@@ -366,6 +425,10 @@ export default function App() {
     }
   };
   const completeSprint = async (sprintId) => {
+    if (!caps.canManageSprints) {
+      toastError("You do not have permission to manage sprints.");
+      return;
+    }
     const sprint = projectSprints.find((s) => s.id === sprintId);
     const ok = await toastConfirm(
       `Complete "${sprint?.name || "this sprint"}"?\n\nIssues stay in the sprint; you can reopen it if this was a mistake.`,
@@ -384,6 +447,10 @@ export default function App() {
     }
   };
   const reopenSprint = async (sprintId) => {
+    if (!caps.canManageSprints) {
+      toastError("You do not have permission to manage sprints.");
+      return;
+    }
     const sprint = projectSprints.find((s) => s.id === sprintId);
     const ok = await toastConfirm(
       `Reopen "${sprint?.name || "this sprint"}"?\n\nIt will become the active sprint again.`,
@@ -399,6 +466,10 @@ export default function App() {
     }
   };
   const createSprint = async (name, goal, startDate, endDate) => {
+    if (!caps.canManageSprints) {
+      toastError("You do not have permission to create sprints.");
+      return;
+    }
     try {
       const sp = await api.createSprint(project.id, name, goal, startDate, endDate);
       setWorkspace((w) => ({ ...w, sprints: [...w.sprints, sp] }));
@@ -409,16 +480,45 @@ export default function App() {
     }
   };
 
-  const addMember = async (email) => {
+  const addMember = async (email, opts = {}) => {
+    if (!caps.canInviteMembers) {
+      toastError("You do not have permission to invite members.");
+      return;
+    }
+    const inviteRole = normalizeRole(opts.role || "developer");
+    const allowedInvite = inviteRolesForEditor(caps);
+    if (!allowedInvite.includes(inviteRole)) {
+      const msg = "You cannot add members with that role.";
+      setMemberError(msg);
+      toastError(msg);
+      return;
+    }
     setMemberError("");
     try {
-      const profile = await api.addProjectMember(project.id, email);
+      const profile = await api.addProjectMember(project.id, email, opts);
       setWorkspace((w) => ({
         ...w,
         users: w.users.some((u) => u.id === profile.id) ? w.users : [...w.users, profile],
-        projects: w.projects.map((p) =>
-          p.id === project.id ? { ...p, members: [...p.members, profile.id] } : p
-        ),
+        projects: w.projects.map((p) => {
+          if (p.id !== project.id) return p;
+          return {
+            ...p,
+            members: [...p.members, profile.id],
+            memberRecords: {
+              ...p.memberRecords,
+              [profile.id]: {
+                role: opts.role || "developer",
+                status: "active",
+                privileges: opts.privileges || {},
+                roleLabel: opts.roleLabel || "",
+              },
+            },
+            memberRoles: { ...p.memberRoles, [profile.id]: opts.role || "developer" },
+            memberStatus: { ...p.memberStatus, [profile.id]: "active" },
+            memberPrivileges: { ...p.memberPrivileges, [profile.id]: opts.privileges || {} },
+            memberRoleLabels: { ...p.memberRoleLabels, [profile.id]: opts.roleLabel || "" },
+          };
+        }),
       }));
       toastSuccess(`${profile.name} added to project`);
     } catch (e) {
@@ -427,7 +527,139 @@ export default function App() {
     }
   };
 
+  const updateMember = async (userId, patch) => {
+    try {
+      const memberRole = project.memberRecords?.[userId]?.role || project.memberRoles?.[userId];
+      const nextRole = patch.role !== undefined ? normalizeRole(patch.role) : normalizeRole(memberRole);
+      const saCount = countSuperAdmins(project, project.members);
+
+      if (patch.role !== undefined) {
+        if (!canEditMemberRole(caps, currentUser.id, userId, memberRole, saCount)) {
+          const msg = "You do not have permission to change this member's role.";
+          toastError(msg);
+          throw new Error(msg);
+        }
+        if (nextRole === "super_admin" && !caps.isSuperAdmin) {
+          const msg = "Only Super Admins can assign the Super Admin role.";
+          toastError(msg);
+          throw new Error(msg);
+        }
+        const allowed = assignableRolesForEditor(caps);
+        if (nextRole !== "super_admin" && !allowed.includes(nextRole)) {
+          const msg = "You cannot assign that role.";
+          toastError(msg);
+          throw new Error(msg);
+        }
+      }
+
+      if (patch.role !== undefined && isSuperAdminRole(memberRole) && nextRole !== "super_admin") {
+        if (saCount <= 1) {
+          const msg = "Cannot change the only Super Admin. Promote another Super Admin first, or transfer the role.";
+          toastError(msg);
+          throw new Error(msg);
+        }
+      }
+
+      if (nextRole === "super_admin" && !isSuperAdminRole(memberRole)) {
+        for (const id of project.members) {
+          if (id === userId) continue;
+          const r = project.memberRecords?.[id]?.role || project.memberRoles?.[id];
+          if (isSuperAdminRole(r)) {
+            await api.updateProjectMember(project.id, id, { role: "admin", privileges: {} });
+            patchMemberLocal(id, { role: "admin", privileges: {}, roleLabel: "" });
+          }
+        }
+      }
+
+      await api.updateProjectMember(project.id, userId, patch);
+      patchMemberLocal(userId, patch);
+      toastSuccess("Member updated");
+    } catch (e) {
+      if (e.message) toastError(e.message);
+      throw e;
+    }
+  };
+
+  const removeMember = async (userId) => {
+    const memberRole = project.memberRecords?.[userId]?.role || project.memberRoles?.[userId];
+    const saCount = countSuperAdmins(project, project.members);
+    if (!canRemoveMember(caps, currentUser.id, userId, memberRole, saCount)) {
+      toastError("You do not have permission to remove this member.");
+      return;
+    }
+    const u = users.find((x) => x.id === userId);
+    const ok = await toastConfirm(
+      `Remove ${u?.name || "this user"} from the project?\n\nTheir past work (issues, comments, logs) stays in the project.`,
+      { confirmLabel: "Remove" }
+    );
+    if (!ok) return;
+    try {
+      await api.removeProjectMember(project.id, userId);
+      setWorkspace((w) => ({
+        ...w,
+        projects: w.projects.map((p) => {
+          if (p.id !== project.id) return p;
+          const memberRecords = { ...p.memberRecords };
+          delete memberRecords[userId];
+          const members = p.members.filter((id) => id !== userId);
+          const memberRoles = { ...p.memberRoles };
+          delete memberRoles[userId];
+          const memberStatus = { ...p.memberStatus };
+          delete memberStatus[userId];
+          const memberPrivileges = { ...p.memberPrivileges };
+          delete memberPrivileges[userId];
+          const memberRoleLabels = { ...p.memberRoleLabels };
+          delete memberRoleLabels[userId];
+          return {
+            ...p,
+            members,
+            memberRecords,
+            memberRoles,
+            memberStatus,
+            memberPrivileges,
+            memberRoleLabels,
+          };
+        }),
+      }));
+      toastSuccess("Member removed");
+    } catch (e) {
+      toastError(e.message);
+    }
+  };
+
+  const setMemberStatus = async (userId, status) => {
+    const memberRole = project.memberRecords?.[userId]?.role || project.memberRoles?.[userId];
+    const saCount = countSuperAdmins(project, project.members);
+    if (!canInactiveMember(caps, currentUser.id, userId, memberRole, saCount)) {
+      toastError("You do not have permission to change this member's status.");
+      return;
+    }
+    try {
+      await api.updateProjectMember(project.id, userId, { status });
+      patchMemberLocal(userId, { status });
+      toastSuccess(status === "inactive" ? "Member set to inactive" : "Member reactivated");
+    } catch (e) {
+      toastError(e.message);
+      throw e;
+    }
+  };
+
+  const saveRoleDefaults = async (roleDefaults) => {
+    try {
+      const saved = await api.updateProjectRoleDefaults(project.id, roleDefaults);
+      patchProject({ roleDefaults: saved });
+      toastSuccess("Role defaults saved");
+    } catch (e) {
+      toastError(e.message);
+      throw e;
+    }
+  };
+
   const addStatus = async (label, color) => {
+    if (!caps.canManageWorkflow) {
+      toastError("You do not have permission to manage workflow.");
+      return;
+    }
     try {
       const s = await api.addStatus(project.id, label, color);
       setWorkspace((w) => ({
@@ -443,6 +675,10 @@ export default function App() {
   };
 
   const deleteStatus = async (statusId) => {
+    if (!caps.canManageWorkflow) {
+      toastError("You do not have permission to manage workflow.");
+      return;
+    }
     try {
       const remaining = project.statuses.filter((s) => s.id !== statusId);
       const removed = project.statuses.find((s) => s.id === statusId);
@@ -475,6 +711,8 @@ export default function App() {
     setView(id);
     toastInfo(`Switched to ${VIEW_LABELS[id] || id}`);
   };
+
+  const showSettingsBtn = caps.canOpenSettings || caps.canManageWorkflow || caps.isSuperAdmin;
 
   const navItem = (id, label, Icon) => (
     <div onClick={() => goToView(id)} style={{
@@ -515,7 +753,9 @@ export default function App() {
           </select>
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button onClick={() => setShowCreateProject(true)} style={{ flex: 1, fontSize: 12, border: `1px solid ${C.border}`, background: "#fff", borderRadius: 4, padding: "5px 0", cursor: "pointer", fontWeight: 600, color: C.subtle }}>+ Project</button>
-            <button onClick={() => { setMemberError(""); setShowSettings(true); }} style={{ border: `1px solid ${C.border}`, background: "#fff", borderRadius: 4, padding: "5px 8px", cursor: "pointer" }}><Settings size={14} color={C.subtle} /></button>
+            {showSettingsBtn && (
+              <button onClick={() => { setMemberError(""); setShowSettings(true); }} style={{ border: `1px solid ${C.border}`, background: "#fff", borderRadius: 4, padding: "5px 8px", cursor: "pointer" }}><Settings size={14} color={C.subtle} /></button>
+            )}
           </div>
         </div>
 
@@ -523,8 +763,8 @@ export default function App() {
           {navItem("board", "Board", LayoutGrid)}
           {navItem("backlog", "Backlog", ListTodo)}
           {navItem("sprints", "Sprints", Rocket)}
-          {navItem("scope", "Scope", FileText)}
-          {navItem("reports", "Reports", Clock)}
+          {caps.canViewScope && navItem("scope", "Scope", FileText)}
+          {caps.canViewReports && navItem("reports", "Reports", Clock)}
         </div>
 
         <div style={{ flex: 1 }} />
@@ -542,6 +782,19 @@ export default function App() {
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {caps.isInactive && (
+          <div style={{
+            padding: "10px 20px",
+            background: "#FFEBE6",
+            borderBottom: `1px solid ${C.border}`,
+            fontSize: 13,
+            color: C.danger,
+            fontWeight: 600,
+          }}>
+            Your access is read-only. Contact a Super Admin.
+          </div>
+        )}
+
         <div style={{ padding: "16px 20px 0", display: "flex", alignItems: "center", gap: 10 }}>
           <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
             {project.name}{" "}
@@ -565,30 +818,31 @@ export default function App() {
               issues={activeSprint ? filteredIssues.filter((i) => i.sprintId === activeSprint.id) : []}
               users={members} allIssues={projectIssues} sprint={activeSprint} statuses={project.statuses}
               onOpen={setSelectedIssueId}
-              onCreate={(data) => createIssue({ ...data, sprintId: activeSprint?.id || null })}
+              onCreate={caps.canCreateIssue ? (data) => createIssue({ ...data, sprintId: activeSprint?.id || null }) : undefined}
             />
           )}
           {view === "backlog" && (
             <BacklogView
               issues={filteredIssues} sprints={projectSprints} users={members} statuses={project.statuses}
               onOpen={setSelectedIssueId}
-              onStatusChange={(id, s) => updateIssueLocal(id, { status: s })}
-              onMoveSprint={(id, sid) => updateIssueLocal(id, { sprintId: sid })}
-              onDelete={deleteIssue}
-              onCreate={createIssue}
-              onStartSprint={requestStartSprint}
-              onCompleteSprint={completeSprint}
-              onReopenSprint={reopenSprint}
-              onUpdateSprint={updateSprintDetails}
-              onCreateSprint={() => setShowCreateSprint(true)}
+              onStatusChange={caps.canChangeStatus ? (id, s) => updateIssueLocal(id, { status: s }) : undefined}
+              onMoveSprint={caps.canEditIssue ? (id, sid) => updateIssueLocal(id, { sprintId: sid }) : undefined}
+              onDelete={caps.canDeleteIssue ? deleteIssue : undefined}
+              onCreate={caps.canCreateIssue ? createIssue : undefined}
+              onStartSprint={caps.canManageSprints ? requestStartSprint : undefined}
+              onCompleteSprint={caps.canManageSprints ? completeSprint : undefined}
+              onReopenSprint={caps.canManageSprints ? reopenSprint : undefined}
+              onUpdateSprint={caps.canManageSprints ? updateSprintDetails : undefined}
+              onCreateSprint={caps.canManageSprints ? () => setShowCreateSprint(true) : undefined}
             />
           )}
           {view === "sprints" && (
             <SprintsView sprints={projectSprints} issues={projectIssues}
-              onStartSprint={requestStartSprint} onCompleteSprint={completeSprint}
-              onReopenSprint={reopenSprint}
-              onUpdateSprint={updateSprintDetails}
-              onCreateSprint={() => setShowCreateSprint(true)} />
+              onStartSprint={caps.canManageSprints ? requestStartSprint : undefined}
+              onCompleteSprint={caps.canManageSprints ? completeSprint : undefined}
+              onReopenSprint={caps.canManageSprints ? reopenSprint : undefined}
+              onUpdateSprint={caps.canManageSprints ? updateSprintDetails : undefined}
+              onCreateSprint={caps.canManageSprints ? () => setShowCreateSprint(true) : undefined} />
           )}
           {view === "reports" && (
             <ReportsView
@@ -599,10 +853,11 @@ export default function App() {
               onOpenIssue={setSelectedIssueId}
             />
           )}
-          {view === "scope" && (
+          {view === "scope" && caps.canViewScope && (
             <ScopeView
               project={project}
               currentUser={currentUser}
+              caps={caps}
               onUpdated={(updated) => {
                 setWorkspace((w) => ({
                   ...w,
@@ -624,12 +879,13 @@ export default function App() {
           users={users}
           allIssues={projectIssues}
           currentUser={currentUser}
+          caps={caps}
           onClose={() => setSelectedIssueId(null)}
           onChanged={(updated) => setIssues((list) => list.map((i) => (i.id === updated.id ? { ...i, ...updated } : i)))}
           onDeleted={() => setSelectedIssueId(null)}
           onOpenIssue={setSelectedIssueId}
-          onCreateChild={createIssue}
-          onDeleteIssue={() => deleteIssue(selectedIssue.id)}
+          onCreateChild={caps.canCreateSubtask ? createIssue : undefined}
+          onDeleteIssue={caps.canDeleteIssue ? () => deleteIssue(selectedIssue.id) : undefined}
         />
       )}
       {showCreateProject && (
@@ -659,9 +915,21 @@ export default function App() {
         />
       )}
       {showSettings && (
-        <ProjectSettingsModal project={project} users={users} error={memberError}
-          onClose={() => setShowSettings(false)} onAddMember={addMember}
-          onAddStatus={addStatus} onDeleteStatus={deleteStatus} />
+        <ProjectSettingsModal
+          project={project}
+          users={users}
+          caps={caps}
+          currentUserId={currentUser.id}
+          error={memberError}
+          onClose={() => setShowSettings(false)}
+          onAddMember={addMember}
+          onUpdateMember={updateMember}
+          onRemoveMember={removeMember}
+          onSetMemberStatus={setMemberStatus}
+          onUpdateRoleDefaults={saveRoleDefaults}
+          onAddStatus={addStatus}
+          onDeleteStatus={deleteStatus}
+        />
       )}
       {showProfile && (
         <ProfileModal

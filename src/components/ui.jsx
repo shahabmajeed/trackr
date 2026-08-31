@@ -64,3 +64,42 @@ export function Chip({ children, onRemove }) {
     </span>
   );
 }
+
+export function IosToggle({ checked, onChange, disabled = false }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      style={{
+        width: 44,
+        height: 26,
+        borderRadius: 13,
+        border: "none",
+        padding: 0,
+        background: disabled ? C.border : checked ? C.primary : C.border,
+        cursor: disabled ? "not-allowed" : "pointer",
+        position: "relative",
+        transition: "background 0.2s",
+        opacity: disabled ? 0.55 : 1,
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 2,
+          left: checked ? 22 : 2,
+          width: 22,
+          height: 22,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.22)",
+          transition: "left 0.2s",
+        }}
+      />
+    </button>
+  );
+}
