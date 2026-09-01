@@ -3,6 +3,8 @@ import {
   ChevronsUp, ArrowUp, Minus, ArrowDown, ChevronsDown,
 } from "lucide-react";
 
+export const FONT_FAMILY = '"Google Sans", sans-serif';
+
 export const C = {
   primary: "#0C66E4",
   primaryHover: "#0055CC",
@@ -24,10 +26,10 @@ export const C = {
 
 /** Four fixed statuses every project starts with (cannot be removed). */
 export const DEFAULT_STATUSES = [
-  { label: "To Do", bg: C.todoBg, text_color: C.todoText, is_fixed: true, sort_order: 0 },
-  { label: "Reopen", bg: C.reopenBg, text_color: C.reopenText, is_fixed: true, sort_order: 1 },
-  { label: "In Progress", bg: C.progBg, text_color: C.progText, is_fixed: true, sort_order: 2 },
-  { label: "Done", bg: C.doneBg, text_color: C.doneText, is_fixed: true, sort_order: 3 },
+  { label: "To Do", bg: C.todoBg, text_color: C.todoText, is_fixed: true, sort_order: 0, icon: "RadioButtonUnchecked" },
+  { label: "Reopen", bg: C.reopenBg, text_color: C.reopenText, is_fixed: true, sort_order: 1, icon: "Replay" },
+  { label: "In Progress", bg: C.progBg, text_color: C.progText, is_fixed: true, sort_order: 2, icon: "Autorenew" },
+  { label: "Done", bg: C.doneBg, text_color: C.doneText, is_fixed: true, sort_order: 3, icon: "CheckCircle" },
 ];
 
 /** Pick readable text color for a hex background. */

@@ -5,7 +5,8 @@ import {
 import { C, TYPES, PRIORITIES, inputStyle, selStyle, fmtDate, fmtDateRange, fmtMinutes, contrastText, STATUS_COLOR_PRESETS, toDateInputValue, fromDateInputValue, defaultEndDateInput } from "../lib/theme";
 import { ROOT_CREATE_TYPES } from "../lib/issueHierarchy";
 import { Avatar, Modal, Field, Chip } from "./ui";
-import { TypeIcon, StatusBadge } from "./IssueModal";
+import { TypeIcon } from "./IssueModal";
+import StatusBadge, { StatusPill } from "./StatusBadge";
 import { ReportsChartsPanel } from "./ReportsCharts";
 import { ReportsTimesheet } from "./ReportsTimesheet";
 import {
@@ -141,7 +142,7 @@ export function BoardView({ issues, users, allIssues, sprint, statuses, onOpen, 
         return (
           <div key={col.id} style={{ minWidth: 280, flex: "1 1 0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: C.subtle, letterSpacing: 0.4 }}>{col.label.toUpperCase()}</span>
+              <StatusPill status={col.id} statuses={statuses} compact style={{ borderRadius: 6, padding: "4px 10px" }} />
               <span style={{ fontSize: 12, color: C.faint }}>{colIssues.length}</span>
             </div>
             <div style={{ background: C.bg, borderRadius: 6, padding: 8, minHeight: 80 }}>

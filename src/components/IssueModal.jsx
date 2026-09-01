@@ -17,6 +17,15 @@ import {
   defaultChildType,
   isSubtaskType,
 } from "../lib/issueHierarchy";
+import RichTextEditor from "./RichTextEditor";
+import RichHtmlContent from "./RichHtmlContent";
+import {
+  htmlToPlain,
+  isEmptyHtml,
+  plainToHtml,
+  RICH_TEXT_MODULES_COMPACT,
+} from "../lib/richText";
+import StatusBadge, { StatusPill } from "./StatusBadge";
 
 function useElapsedLabel(startedAt) {
   const [now, setNow] = useState(Date.now());
@@ -44,24 +53,6 @@ function TypeIcon({ type, size = 15 }) {
     }}>
       <Icon size={size - 3} color="#fff" strokeWidth={2.5} />
     </span>
-  );
-}
-
-function StatusBadge({ status, statuses, onChange, compact }) {
-  const meta = statusMeta(statuses, status) || { bg: C.todoBg, text: C.todoText, label: "?" };
-  return (
-    <select
-      value={status || ""}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => { e.stopPropagation(); onChange(e.target.value); }}
-      style={{
-        background: meta.bg, color: meta.text, border: "none", borderRadius: 4,
-        fontSize: compact ? 11 : 12, fontWeight: 700, padding: compact ? "2px 6px" : "4px 10px",
-        cursor: "pointer", appearance: "none", textAlign: "center",
-      }}
-    >
-      {statuses.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-    </select>
   );
 }
 
@@ -98,26 +89,6 @@ function LogTimeForm({ onSave, onCancel, initialMinutes = 0, initialNote = "", i
       </div>
     </div>
   );
-}
-
-function renderMentions(text, users) {
-  const parts = text.split(/(@[\w.+-]+(?:\s[\w.+-]+)?)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("@")) {
-      const mention = part.slice(1);
-      const match = users.find((u) =>
-        u.name.toLowerCase() === mention.toLowerCase() ||
-        u.name.toLowerCase().startsWith(mention.toLowerCase()) ||
-        u.email.split("@")[0].toLowerCase() === mention.toLowerCase()
-      );
-      return (
-        <span key={i} style={{ color: C.primary, fontWeight: 700, background: C.primarySoft, borderRadius: 3, padding: "0 3px" }}>
-          @{match ? match.name : mention}
-        </span>
-      );
-    }
-    return <span key={i}>{part}</span>;
-  });
 }
 
 function activityLabel(a, users, statuses, issues) {
@@ -176,6 +147,7 @@ export default function IssueModal({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [tab, setTab] = useState("comments");
   const fileRef = useRef(null);
+  const commentEditorRef = useRef(null);
 
   const canEdit = caps ? !caps.isReadOnly && caps.canEditIssue : true;
   const canStatus = caps ? !caps.isReadOnly && caps.canChangeStatus : true;
@@ -189,7 +161,7 @@ export default function IssueModal({
 
   useEffect(() => {
     setTitle(issue.title || "");
-    setDesc(issue.description || "");
+    setDesc(plainToHtml(issue.description || ""));
     setComment("");
     setSubtaskTitle("");
     setSubtaskType(defaultChildType(issue.type));
@@ -241,13 +213,15 @@ export default function IssueModal({
     return () => { cancelled = true; };
   }, [issue.id, tracking]);
 
+  const commentPlain = useMemo(() => htmlToPlain(comment), [comment]);
+
   const mentionCandidates = useMemo(() => {
-    const at = comment.lastIndexOf("@");
+    const at = commentPlain.lastIndexOf("@");
     if (at < 0) return [];
-    const q = comment.slice(at + 1).toLowerCase();
+    const q = commentPlain.slice(at + 1).toLowerCase();
     if (q.includes(" ")) return [];
     return members.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)).slice(0, 6);
-  }, [comment, members]);
+  }, [commentPlain, members]);
 
   const patchLocal = (partial) => onChanged({ ...issue, ...partial });
 
@@ -329,11 +303,21 @@ export default function IssueModal({
     setLabelInput("");
   };
 
+  const saveDescription = () => {
+    if (!canEdit) return;
+    const normalized = isEmptyHtml(desc) ? "" : desc;
+    const current = issue.description || "";
+    if (normalized === current) return;
+    if (isEmptyHtml(normalized) && isEmptyHtml(current)) return;
+    update({ description: normalized });
+  };
+
   const submitComment = async () => {
     if (!canComment) return;
-    if (!comment.trim()) return;
+    if (isEmptyHtml(comment)) return;
     try {
-      const c = await api.addComment(issue.id, currentUser.id, comment.trim());
+      const body = isEmptyHtml(comment) ? "" : comment;
+      const c = await api.addComment(issue.id, currentUser.id, body);
       patchLocal({ comments: [...issue.comments, c] });
       setComment("");
       setMentionOpen(false);
@@ -345,7 +329,8 @@ export default function IssueModal({
 
   const saveEditComment = async (id) => {
     try {
-      const c = await api.updateComment(id, editCommentText.trim());
+      const body = isEmptyHtml(editCommentText) ? "" : editCommentText;
+      const c = await api.updateComment(id, body);
       patchLocal({ comments: issue.comments.map((x) => (x.id === id ? c : x)) });
       setEditingCommentId(null);
     } catch (e) {
@@ -474,10 +459,19 @@ export default function IssueModal({
   };
 
   const insertMention = (u) => {
-    const at = comment.lastIndexOf("@");
-    const next = `${comment.slice(0, at)}@${u.name} `;
-    setComment(next);
+    const quill = commentEditorRef.current?.getEditor?.();
+    if (!quill) return;
+    const text = quill.getText();
+    const at = text.lastIndexOf("@");
+    if (at < 0) return;
+    const sel = quill.getSelection();
+    const cursor = sel ? sel.index : Math.max(0, text.length - 1);
+    const deleteLen = Math.max(0, cursor - at);
+    quill.deleteText(at, deleteLen);
+    quill.insertText(at, `@${u.name} `);
+    setComment(quill.root.innerHTML);
     setMentionOpen(false);
+    quill.focus();
   };
 
   const dueValue = issue.dueDate
@@ -564,9 +558,19 @@ export default function IssueModal({
           />
 
           <Field label="Description">
-            <textarea value={desc} onChange={(e) => setDesc(e.target.value)} onBlur={() => update({ description: desc })}
-              placeholder="Add a description..." rows={4}
-              style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+            {canEdit ? (
+              <RichTextEditor
+                value={desc}
+                onChange={(html) => setDesc(html)}
+                onBlur={saveDescription}
+                placeholder="Add a description..."
+                minHeight={140}
+              />
+            ) : issue.description ? (
+              <RichHtmlContent html={issue.description} />
+            ) : (
+              <div style={{ fontSize: 13, color: C.faint, fontStyle: "italic" }}>No description</div>
+            )}
           </Field>
 
           {issue.parentId && (
@@ -598,7 +602,6 @@ export default function IssueModal({
             <Field label={`${childSectionLabel(issue.type)} (${childDoneCount}/${displayChildren.length})`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                 {displayChildren.map((c) => {
-                  const st = statusMeta(project.statuses, c.status);
                   return (
                     <div
                       key={c.id}
@@ -611,7 +614,7 @@ export default function IssueModal({
                       <TypeIcon type={c.type} size={12} />
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: C.faint, width: 56 }}>{c.key}</span>
                       <span style={{ flex: 1, fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</span>
-                      <span style={{ background: st?.bg, color: st?.text, fontSize: 10.5, fontWeight: 700, padding: "2px 6px", borderRadius: 3 }}>{st?.label}</span>
+                      <StatusPill status={c.status} statuses={project.statuses} compact />
                       <Avatar user={users.find((u) => u.id === c.assignee)} size={20} />
                     </div>
                   );
@@ -716,36 +719,72 @@ export default function IssueModal({
                           <span style={{ fontSize: 11, color: C.faint }}>{new Date(c.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
                           {mine && (
                             <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                              <Pencil size={12} color={C.faint} style={{ cursor: "pointer" }} onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.text); }} />
+                              <Pencil size={12} color={C.faint} style={{ cursor: "pointer" }} onClick={() => { setEditingCommentId(c.id); setEditCommentText(plainToHtml(c.text)); }} />
                               <Trash2 size={12} color={C.faint} style={{ cursor: "pointer" }} onClick={() => removeComment(c.id)} />
                             </span>
                           )}
                         </div>
                         {editingCommentId === c.id ? (
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <input style={{ ...inputStyle, flex: 1 }} value={editCommentText} onChange={(e) => setEditCommentText(e.target.value)} />
-                            <button onClick={() => saveEditComment(c.id)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "0 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                            <button onClick={() => setEditingCommentId(null)} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, padding: "0 10px", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                          <div>
+                            <RichTextEditor
+                              value={editCommentText}
+                              onChange={(html) => setEditCommentText(html)}
+                              modules={RICH_TEXT_MODULES_COMPACT}
+                              className="rich-text-compact"
+                              minHeight={90}
+                            />
+                            <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
+                              <button onClick={() => setEditingCommentId(null)} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                              <button onClick={() => saveEditComment(c.id)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                            </div>
                           </div>
                         ) : (
-                          <div style={{ fontSize: 13, color: C.text }}>{renderMentions(c.text, members)}</div>
+                          <RichHtmlContent html={c.text} users={members} />
                         )}
                       </div>
                     </div>
                   );
                 })}
               </div>
+              {canComment && (
               <div style={{ position: "relative" }}>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                   <Avatar user={currentUser} size={26} />
-                  <div style={{ flex: 1, display: "flex", gap: 6 }}>
-                    <input value={comment} onChange={(e) => { setComment(e.target.value); setMentionOpen(e.target.value.includes("@")); }}
-                      onKeyDown={(e) => { if (e.key === "Enter" && comment.trim()) submitComment(); }}
-                      placeholder="Add a comment… use @name to mention" style={{ ...inputStyle, flex: 1 }} />
-                    <button onClick={submitComment}
-                      style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "0 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                      <MessageSquare size={13} />
-                    </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <RichTextEditor
+                      ref={commentEditorRef}
+                      value={comment}
+                      onChange={(html) => {
+                        setComment(html);
+                        setMentionOpen(htmlToPlain(html).includes("@"));
+                      }}
+                      modules={RICH_TEXT_MODULES_COMPACT}
+                      className="rich-text-compact"
+                      minHeight={90}
+                      placeholder="Add a comment… use @name to mention"
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                        <button
+                          onClick={submitComment}
+                          disabled={isEmptyHtml(comment)}
+                          style={{
+                            background: C.primary,
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 4,
+                            padding: "6px 14px",
+                            fontSize: 12.5,
+                            fontWeight: 700,
+                            cursor: isEmptyHtml(comment) ? "default" : "pointer",
+                            opacity: isEmptyHtml(comment) ? 0.5 : 1,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                        <MessageSquare size={13} /> Comment
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {mentionOpen && mentionCandidates.length > 0 && (
@@ -758,6 +797,7 @@ export default function IssueModal({
                   </div>
                 )}
               </div>
+              )}
             </>
           )}
 
@@ -776,7 +816,12 @@ export default function IssueModal({
 
         <div style={{ flex: 1, borderLeft: `1px solid ${C.border}`, padding: "16px 20px", background: C.bg, overflowY: "auto" }}>
           <Field label="Status">
-            <StatusBadge status={issue.status} statuses={project.statuses} onChange={changeStatus} />
+            <StatusBadge
+              status={issue.status}
+              statuses={project.statuses}
+              onChange={canStatus ? changeStatus : undefined}
+              disabled={!canStatus}
+            />
           </Field>
           <Field label="Type">
             <select value={issue.type} onChange={(e) => update({ type: e.target.value })} style={selStyle}>
@@ -951,4 +996,5 @@ export default function IssueModal({
   );
 }
 
-export { TypeIcon, StatusBadge, LogTimeForm };
+export { TypeIcon, LogTimeForm };
+export { default as StatusBadge, StatusPill } from "./StatusBadge";

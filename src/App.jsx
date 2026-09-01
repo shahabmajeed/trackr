@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, User, FileText } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import * as api from "./lib/api";
-import { C, selStyle, fmtMinutes, TYPES } from "./lib/theme";
+import { C, FONT_FAMILY, fmtMinutes, TYPES } from "./lib/theme";
 import { typeLabel } from "./lib/issueHierarchy";
 import { BuildVersion } from "./lib/version";
 import { getProjectCapabilities, canCreateIssueType, countSuperAdmins, isSuperAdminRole, normalizeRole, canEditMemberRole, assignableRolesForEditor, inviteRolesForEditor, canInactiveMember, canRemoveMember } from "./lib/privileges";
 import { toastSuccess, toastError, toastInfo, toastConfirm } from "./lib/toast";
-import { Avatar } from "./components/ui";
 import AuthScreen from "./components/AuthScreen";
+import Sidebar from "./components/Sidebar";
+import LoadingScreen from "./components/LoadingScreen";
 import ProfileModal from "./components/ProfileModal";
 import IssueModal from "./components/IssueModal";
 import ScopeView from "./components/ScopeView";
@@ -139,11 +139,7 @@ export default function App() {
   }, [refreshWorkspace]);
 
   if (loading || session === undefined || (session && currentUser && workspace === null)) {
-    return (
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontFamily: "-apple-system,sans-serif" }}>
-        Loading…
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!session || !currentUser) {
@@ -169,7 +165,7 @@ export default function App() {
 
   if (loadError) {
   return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", color: C.danger, padding: 24, textAlign: "center" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_FAMILY, color: C.danger, padding: 24, textAlign: "center" }}>
         {loadError}
         <br />
         <span style={{ color: C.subtle, fontSize: 13 }}>Make sure you ran the SQL schema + extensions in Supabase.</span>
@@ -185,7 +181,7 @@ export default function App() {
 
   if (!project) {
   return (
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "-apple-system,sans-serif" }}>
+      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_FAMILY }}>
         <div style={{ textAlign: "center" }}>
           <p style={{ color: C.subtle, marginBottom: 12 }}>You don't have any projects yet.</p>
           <button onClick={() => setShowCreateProject(true)} style={{ background: C.primary, color: "#fff", border: "none", borderRadius: 4, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
@@ -655,13 +651,13 @@ export default function App() {
     }
   };
 
-  const addStatus = async (label, color) => {
+  const addStatus = async (label, color, icon) => {
     if (!caps.canManageWorkflow) {
       toastError("You do not have permission to manage workflow.");
       return;
     }
     try {
-      const s = await api.addStatus(project.id, label, color);
+      const s = await api.addStatus(project.id, label, color, icon);
       setWorkspace((w) => ({
         ...w,
         projects: w.projects.map((p) =>
@@ -669,6 +665,27 @@ export default function App() {
         ),
       }));
       toastSuccess(`Status "${label}" added`);
+    } catch (e) {
+      toastError(e.message);
+    }
+  };
+
+  const updateStatus = async (statusId, label, color, icon) => {
+    if (!caps.canManageWorkflow) {
+      toastError("You do not have permission to manage workflow.");
+      return;
+    }
+    try {
+      const s = await api.updateStatus(statusId, project.id, { label, color, icon });
+      setWorkspace((w) => ({
+        ...w,
+        projects: w.projects.map((p) =>
+          p.id === project.id
+            ? { ...p, statuses: p.statuses.map((st) => (st.id === statusId ? s : st)) }
+            : p
+        ),
+      }));
+      toastSuccess(`Status "${label}" updated`);
     } catch (e) {
       toastError(e.message);
     }
@@ -714,72 +731,31 @@ export default function App() {
 
   const showSettingsBtn = caps.canOpenSettings || caps.canManageWorkflow || caps.isSuperAdmin;
 
-  const navItem = (id, label, Icon) => (
-    <div onClick={() => goToView(id)} style={{
-      display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: "pointer",
-      borderRadius: 4, margin: "0 8px", fontSize: 13.5, fontWeight: 600,
-      background: view === id ? C.primarySoft : "transparent", color: view === id ? C.primary : C.subtle,
-    }}>
-      <Icon size={16} /> {label}
-    </div>
-  );
+  const switchProject = (projectId) => {
+    const next = projects.find((p) => p.id === projectId);
+    setCurrentProjectId(projectId);
+    setView("board");
+    resetFilters();
+    setSelectedIssueId(null);
+    if (next) toastInfo(`Switched to ${next.name}`);
+  };
 
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif", background: C.bg, color: C.text }}>
-      <div style={{ width: 232, background: "#fff", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 16px 10px" }}>
-          <svg width="24" height="24" viewBox="0 0 34 34">
-            <rect x="2" y="2" width="14" height="14" rx="4" fill={C.primary} />
-            <rect x="18" y="2" width="14" height="14" rx="4" fill="#2ABB7F" opacity="0.9" />
-            <rect x="10" y="18" width="14" height="14" rx="4" fill="#8F7EE7" opacity="0.9" />
-          </svg>
-          <span style={{ fontWeight: 800, fontSize: 16 }}>Trackr</span>
-        </div>
-
-        <div style={{ padding: "6px 16px 12px" }}>
-          <select
-            value={project.id}
-            onChange={(e) => {
-              const next = projects.find((p) => p.id === e.target.value);
-              setCurrentProjectId(e.target.value);
-              setView("board");
-              resetFilters();
-              setSelectedIssueId(null);
-              toastInfo(next ? `Switched to ${next.name}` : "Project changed");
-            }}
-            style={{ ...selStyle, fontWeight: 700 }}
-          >
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.key})</option>)}
-          </select>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={() => setShowCreateProject(true)} style={{ flex: 1, fontSize: 12, border: `1px solid ${C.border}`, background: "#fff", borderRadius: 4, padding: "5px 0", cursor: "pointer", fontWeight: 600, color: C.subtle }}>+ Project</button>
-            {showSettingsBtn && (
-              <button onClick={() => { setMemberError(""); setShowSettings(true); }} style={{ border: `1px solid ${C.border}`, background: "#fff", borderRadius: 4, padding: "5px 8px", cursor: "pointer" }}><Settings size={14} color={C.subtle} /></button>
-            )}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 6 }}>
-          {navItem("board", "Board", LayoutGrid)}
-          {navItem("backlog", "Backlog", ListTodo)}
-          {navItem("sprints", "Sprints", Rocket)}
-          {caps.canViewScope && navItem("scope", "Scope", FileText)}
-          {caps.canViewReports && navItem("reports", "Reports", Clock)}
-        </div>
-
-        <div style={{ flex: 1 }} />
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div onClick={() => setShowProfile(true)} style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, cursor: "pointer" }}>
-          <Avatar user={currentUser} size={30} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
-            <div style={{ fontSize: 11, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.email}</div>
-          </div>
-          </div>
-          <User size={15} color={C.faint} style={{ cursor: "pointer" }} onClick={() => setShowProfile(true)} title="Edit profile" />
-          <LogOut size={16} color={C.faint} style={{ cursor: "pointer" }} onClick={() => api.signOut()} />
-        </div>
-      </div>
+    <div style={{ display: "flex", height: "100vh", fontFamily: FONT_FAMILY, background: C.bg, color: C.text }}>
+      <Sidebar
+        currentUser={currentUser}
+        projects={projects}
+        projectId={project.id}
+        onProjectChange={switchProject}
+        onAddProject={() => setShowCreateProject(true)}
+        onProjectSettings={() => { setMemberError(""); setShowSettings(true); }}
+        showProjectSettings={showSettingsBtn}
+        view={view}
+        onNavigate={goToView}
+        caps={caps}
+        onProfile={() => setShowProfile(true)}
+        onSignOut={() => api.signOut()}
+      />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {caps.isInactive && (
@@ -928,6 +904,7 @@ export default function App() {
           onSetMemberStatus={setMemberStatus}
           onUpdateRoleDefaults={saveRoleDefaults}
           onAddStatus={addStatus}
+          onUpdateStatus={updateStatus}
           onDeleteStatus={deleteStatus}
         />
       )}

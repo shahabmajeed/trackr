@@ -3,13 +3,13 @@ import { createRoot } from "react-dom/client";
 import { Toaster } from "react-hot-toast";
 import "./index.css";
 import { isSupabaseConfigured } from "./lib/supabase";
-import { C } from "./lib/theme";
+import { C, FONT_FAMILY } from "./lib/theme";
 
 function MissingConfig() {
   return (
     <div style={{
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif", background: C.bg, padding: 24,
+      fontFamily: FONT_FAMILY, background: C.bg, padding: 24,
     }}>
       <div style={{
         maxWidth: 480, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8,
@@ -51,7 +51,7 @@ async function bootstrap() {
           duration: 2800,
           style: {
             fontSize: 13.5,
-            fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+            fontFamily: FONT_FAMILY,
             color: C.text,
             border: `1px solid ${C.border}`,
           },

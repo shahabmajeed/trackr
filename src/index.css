@@ -1,31 +1,55 @@
-/* Quill editor inside Scope */
-.ql-toolbar.ql-snow {
+/* Google Sans — global app font */
+html {
+  font-family: "Google Sans", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
+  font-variation-settings: "GRAD" 0;
+}
+
+body {
+  font-family: inherit;
+  margin: 0;
+}
+
+/* Quill rich text editor */
+.rich-text-editor .ql-toolbar.ql-snow {
   border-color: #DCDFE4;
   border-radius: 4px 4px 0 0;
   background: #F7F8F9;
 }
-.ql-container.ql-snow {
+.rich-text-editor .ql-container.ql-snow {
   border-color: #DCDFE4;
   border-radius: 0 0 4px 4px;
-  min-height: 160px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: var(--rte-min-height, 120px);
+  font-family: "Google Sans", sans-serif;
   font-size: 14px;
 }
-.ql-editor {
-  min-height: 140px;
+.rich-text-editor .ql-editor {
+  min-height: calc(var(--rte-min-height, 120px) - 42px);
+}
+.rich-text-editor.rich-text-compact .ql-toolbar.ql-snow {
+  padding: 4px 6px;
+}
+.rich-text-editor.rich-text-compact .ql-toolbar .ql-formats {
+  margin-right: 8px;
 }
 
-.scope-summary-html p {
+.scope-summary-html p,
+.issue-rich-html p {
   margin: 0 0 0.65em;
 }
-.scope-summary-html p:last-child {
+.scope-summary-html p:last-child,
+.issue-rich-html p:last-child {
   margin-bottom: 0;
 }
 .scope-summary-html ul,
-.scope-summary-html ol {
+.scope-summary-html ol,
+.issue-rich-html ul,
+.issue-rich-html ol {
   margin: 0.4em 0 0.8em;
   padding-left: 1.2em;
 }
-.scope-summary-html a {
+.scope-summary-html a,
+.issue-rich-html a {
   color: #0C66E4;
 }

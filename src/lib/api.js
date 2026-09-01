@@ -1,5 +1,7 @@
 import { supabase } from "./supabase";
+import { htmlToPlain } from "./richText";
 import { DEFAULT_STATUSES } from "./theme";
+import { defaultIconForStatusLabel } from "./statusIcons";
 import { normalizeRole } from "./privileges";
 import {
   validateParentChild,
@@ -22,6 +24,7 @@ export function mapStatus(s) {
     text: s.text_color,
     fixed: s.is_fixed,
     sortOrder: s.sort_order,
+    icon: s.icon || defaultIconForStatusLabel(s.label),
   };
 }
 
@@ -688,7 +691,7 @@ export async function updateProjectRoleDefaults(projectId, roleDefaults) {
   return data.role_defaults || {};
 }
 
-export async function addStatus(projectId, label, color) {
+export async function addStatus(projectId, label, color, icon) {
   const { data: existing } = await supabase
     .from("statuses")
     .select("sort_order")
@@ -703,12 +706,34 @@ export async function addStatus(projectId, label, color) {
       label,
       bg: color.bg,
       text_color: color.text,
+      icon: icon || "Label",
       is_fixed: false,
       sort_order,
     })
     .select()
     .single();
   if (error) throw error;
+  return mapStatus(data);
+}
+
+export async function updateStatus(statusId, projectId, patch) {
+  const row = {};
+  if (patch.label != null) row.label = String(patch.label).trim();
+  if (patch.icon != null) row.icon = patch.icon || "Label";
+  if (patch.color != null) {
+    row.bg = patch.color.bg;
+    row.text_color = patch.color.text;
+  }
+  const { data, error } = await supabase
+    .from("statuses")
+    .update(row)
+    .eq("id", statusId)
+    .eq("project_id", projectId)
+    .eq("is_fixed", false)
+    .select()
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error("This status cannot be edited.");
   return mapStatus(data);
 }
 
@@ -728,6 +753,7 @@ export async function ensureFixedStatuses(projectId, currentStatuses = []) {
         .update({
           bg: def.bg,
           text_color: def.text_color,
+          icon: def.icon,
           is_fixed: true,
           sort_order: def.sort_order,
         })
@@ -747,6 +773,7 @@ export async function ensureFixedStatuses(projectId, currentStatuses = []) {
           label: def.label,
           bg: def.bg,
           text_color: def.text_color,
+          icon: def.icon,
           is_fixed: true,
           sort_order: def.sort_order,
         })
@@ -1049,7 +1076,7 @@ export async function addComment(issueId, userId, text) {
     .select()
     .single();
   if (error) throw error;
-  await logActivity(issueId, userId, "comment_added", null, text.slice(0, 80));
+  await logActivity(issueId, userId, "comment_added", null, htmlToPlain(text).slice(0, 80));
   return mapComment(data);
 }
 

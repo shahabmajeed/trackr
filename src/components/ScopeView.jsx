@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import ReactQuill from "react-quill-new";
-import "react-quill-new/dist/quill.snow.css";
 import {
   FileText, Upload, Trash2, Image as ImageIcon, Sparkles, ExternalLink, User,
   ArrowRight, Globe, Layers, Mail, Pencil,
 } from "lucide-react";
 import { C, inputStyle, selStyle } from "../lib/theme";
 import { Field } from "./ui";
+import RichTextEditor from "./RichTextEditor";
 import ScopeFilesPanel from "./ScopeFilesPanel";
 import * as api from "../lib/api";
 import { extractScopeFromFile } from "../lib/scopeExtract";
@@ -31,16 +30,6 @@ export const CLIENT_SOURCES = [
   { value: "referral", label: "Referral" },
   { value: "other", label: "Other" },
 ];
-
-const quillModules = {
-  toolbar: [
-    [{ header: [1, 2, 3, false] }],
-    ["bold", "italic", "underline", "strike"],
-    [{ list: "ordered" }, { list: "bullet" }],
-    ["link"],
-    ["clean"],
-  ],
-};
 
 const labelOf = (list, value) => list.find((x) => x.value === value)?.label || "—";
 
@@ -613,7 +602,7 @@ export default function ScopeView({ project, currentUser, onUpdated, caps }) {
 
           <Field label="Description">
             <div style={{ background: "#fff", borderRadius: 4, marginBottom: 4 }}>
-              <ReactQuill theme="snow" value={descriptionHtml} onChange={setDescriptionHtml} modules={quillModules} />
+              <RichTextEditor value={descriptionHtml} onChange={setDescriptionHtml} minHeight={160} />
             </div>
           </Field>
 

@@ -51,6 +51,7 @@ create table if not exists statuses (
   label text not null,
   bg text not null,
   text_color text not null,
+  icon text default '',
   is_fixed boolean not null default false,
   sort_order int not null default 0
 );

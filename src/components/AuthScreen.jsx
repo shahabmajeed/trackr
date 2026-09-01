@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Mail, Lock, User, Eye, EyeOff } from "lucide-react";
-import { C, inputStyle } from "../lib/theme";
+import { C, FONT_FAMILY, inputStyle } from "../lib/theme";
 import { BuildVersion } from "../lib/version";
 import { Field } from "./ui";
+import Logo from "./Logo";
 import * as api from "../lib/api";
 
 export default function AuthScreen({ onAuthed }) {
@@ -75,15 +76,10 @@ export default function AuthScreen({ onAuthed }) {
     "A Jira-style workspace for your team.";
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif", padding: 16 }}>
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_FAMILY, padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 380 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 28 }}>
-          <svg width="34" height="34" viewBox="0 0 34 34">
-            <rect x="2" y="2" width="14" height="14" rx="4" fill={C.primary} />
-            <rect x="18" y="2" width="14" height="14" rx="4" fill="#2ABB7F" opacity="0.9" />
-            <rect x="10" y="18" width="14" height="14" rx="4" fill="#8F7EE7" opacity="0.9" />
-          </svg>
-          <span style={{ fontSize: 22, fontWeight: 800, color: C.text }}>Trackr</span>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
+          <Logo height={44} />
         </div>
 
         <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: 28, boxShadow: "0 1px 3px rgba(9,30,66,0.08)" }}>

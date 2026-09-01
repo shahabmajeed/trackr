@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Trash2, UserX, UserCheck, Shield, Pencil } from "lucide-react";
 import { C, inputStyle, selStyle, contrastText, STATUS_COLOR_PRESETS } from "../lib/theme";
 import { Avatar, Modal, Field } from "./ui";
+import StatusIconPicker from "./StatusIconPicker";
+import StatusMuiIcon from "./StatusMuiIcon";
 import PrivilegesPanel from "./PrivilegesPanel";
 import {
   ROLES,
@@ -64,6 +66,7 @@ export default function ProjectSettingsModal({
   onSetMemberStatus,
   onUpdateRoleDefaults,
   onAddStatus,
+  onUpdateStatus,
   onDeleteStatus,
   error,
 }) {
@@ -80,9 +83,18 @@ export default function ProjectSettingsModal({
   const [defaultsCustomLabel, setDefaultsCustomLabel] = useState("");
   const [statusLabel, setStatusLabel] = useState("");
   const [statusColor, setStatusColor] = useState("#EAE6FF");
+  const [statusIcon, setStatusIcon] = useState("Label");
+  const [editingStatusId, setEditingStatusId] = useState(null);
+  const [editStatusLabel, setEditStatusLabel] = useState("");
+  const [editStatusColor, setEditStatusColor] = useState("#EAE6FF");
+  const [editStatusIcon, setEditStatusIcon] = useState("Label");
   const [busy, setBusy] = useState(false);
 
   const members = users.filter((u) => project.members.includes(u.id));
+
+  useEffect(() => {
+    if (tab !== "workflow") setEditingStatusId(null);
+  }, [tab]);
 
   const superAdminCount = countSuperAdmins(project, members.map((u) => u.id));
   const editableRoles = assignableRolesForEditor(caps);
@@ -181,8 +193,55 @@ export default function ProjectSettingsModal({
 
   const addCustomStatus = () => {
     if (!statusLabel.trim() || !caps?.canManageWorkflow) return;
-    onAddStatus(statusLabel.trim(), { bg: statusColor, text: contrastText(statusColor) });
+    onAddStatus(statusLabel.trim(), { bg: statusColor, text: contrastText(statusColor) }, statusIcon);
     setStatusLabel("");
+    setStatusIcon("Label");
+  };
+
+  const openEditStatus = (s) => {
+    setEditingStatusId(s.id);
+    setEditStatusLabel(s.label);
+    setEditStatusColor(s.bg || "#EAE6FF");
+    setEditStatusIcon(s.icon || "Label");
+  };
+
+  const cancelEditStatus = () => {
+    setEditingStatusId(null);
+    setEditStatusLabel("");
+    setEditStatusColor("#EAE6FF");
+    setEditStatusIcon("Label");
+  };
+
+  const saveEditStatus = async () => {
+    if (!editingStatusId || !editStatusLabel.trim() || !caps?.canManageWorkflow) return;
+    setBusy(true);
+    try {
+      await onUpdateStatus(
+        editingStatusId,
+        editStatusLabel.trim(),
+        { bg: editStatusColor, text: contrastText(editStatusColor) },
+        editStatusIcon
+      );
+      cancelEditStatus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyPresetColor = (hex) => {
+    if (editingStatusId) setEditStatusColor(hex);
+    else setStatusColor(hex);
+  };
+
+  const workflowActionBtn = {
+    border: `1px solid ${C.border}`,
+    background: "#fff",
+    borderRadius: 6,
+    padding: 5,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    flexShrink: 0,
   };
 
   const invite = () => {
@@ -572,62 +631,184 @@ export default function ProjectSettingsModal({
 
         {tab === "workflow" && caps?.canManageWorkflow && (
           <Field label="Workflow statuses">
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-              {project.statuses.map((s) => (
-                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      background: s.bg,
-                      color: s.text,
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      padding: "3px 9px",
-                      borderRadius: 4,
-                      flex: 1,
-                    }}
-                  >
-                    {s.label}
-                  </span>
-                  {s.fixed ? (
-                    <span title="This status can't be removed" style={{ fontSize: 11, color: C.faint }}>fixed</span>
-                  ) : (
-                    <Trash2
-                      size={14}
-                      color={C.faint}
-                      style={{ cursor: "pointer" }}
-                      onClick={() => onDeleteStatus(s.id)}
-                      title="Remove status"
-                    />
-                  )}
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {project.statuses.map((s) => {
+                if (!s.fixed && editingStatusId === s.id) {
+                  return (
+                    <div key={s.id} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 2 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <input
+                          value={editStatusLabel}
+                          onChange={(e) => setEditStatusLabel(e.target.value)}
+                          placeholder="Status name"
+                          style={{ ...inputStyle, flex: "1 1 120px", minWidth: 120, marginBottom: 0, padding: "5px 10px", fontSize: 13 }}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveEditStatus(); }}
+                        />
+                        <StatusIconPicker value={editStatusIcon} onChange={setEditStatusIcon} preferUp />
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            cursor: "pointer",
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 4,
+                            padding: "2px 6px",
+                            background: "#fff",
+                            height: 32,
+                            boxSizing: "border-box",
+                          }}
+                          title="Pick a color"
+                        >
+                          <span
+                            style={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: 3,
+                              background: editStatusColor,
+                              border: `1px solid ${C.borderStrong}`,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <input
+                            type="color"
+                            value={editStatusColor.length === 7 ? editStatusColor : "#EAE6FF"}
+                            onChange={(e) => setEditStatusColor(e.target.value)}
+                            style={{ width: 24, height: 24, border: "none", padding: 0, background: "transparent", cursor: "pointer" }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={saveEditStatus}
+                          disabled={busy || !editStatusLabel.trim()}
+                          style={{
+                            background: C.primary,
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 4,
+                            padding: "0 10px",
+                            height: 32,
+                            fontSize: 12.5,
+                            fontWeight: 700,
+                            cursor: busy ? "default" : "pointer",
+                            opacity: busy || !editStatusLabel.trim() ? 0.6 : 1,
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditStatus}
+                          style={{
+                            background: "#fff",
+                            color: C.subtle,
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 4,
+                            padding: "0 10px",
+                            height: 32,
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          background: editStatusColor,
+                          minHeight: 28,
+                        }}
+                      >
+                        <StatusMuiIcon name={editStatusIcon} size={16} color={contrastText(editStatusColor)} />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: contrastText(editStatusColor), lineHeight: 1.2 }}>
+                          {editStatusLabel.trim() || "Preview"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        background: s.bg,
+                        minHeight: 28,
+                      }}
+                    >
+                      <StatusMuiIcon status={s} size={16} color={s.text} />
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: s.text, lineHeight: 1.2 }}>{s.label}</span>
+                    </div>
+                    {s.fixed ? (
+                      <span title="This status can't be edited or removed" style={{ fontSize: 10.5, color: C.faint, paddingRight: 2, flexShrink: 0 }}>fixed</span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          title="Edit status"
+                          onClick={() => openEditStatus(s)}
+                          style={workflowActionBtn}
+                        >
+                          <Pencil size={13} color={C.faint} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Remove status"
+                          onClick={() => {
+                            if (editingStatusId === s.id) cancelEditStatus();
+                            onDeleteStatus(s.id);
+                          }}
+                          style={workflowActionBtn}
+                        >
+                          <Trash2 size={13} color={C.faint} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <input
                 value={statusLabel}
                 onChange={(e) => setStatusLabel(e.target.value)}
                 placeholder="e.g. In Review"
-                style={{ ...inputStyle, flex: 1, minWidth: 140, marginBottom: 0 }}
+                style={{ ...inputStyle, flex: "1 1 140px", minWidth: 140, marginBottom: 0, padding: "5px 10px", fontSize: 13 }}
                 onKeyDown={(e) => { if (e.key === "Enter") addCustomStatus(); }}
               />
+              <StatusIconPicker value={statusIcon} onChange={setStatusIcon} preferUp />
               <label
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: 4,
                   cursor: "pointer",
                   border: `1px solid ${C.border}`,
                   borderRadius: 4,
-                  padding: "4px 8px",
+                  padding: "2px 6px",
                   background: "#fff",
+                  height: 32,
+                  boxSizing: "border-box",
                 }}
                 title="Pick a color"
               >
                 <span
                   style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 4,
+                    width: 18,
+                    height: 18,
+                    borderRadius: 3,
                     background: statusColor,
                     border: `1px solid ${C.borderStrong}`,
                     flexShrink: 0,
@@ -637,7 +818,7 @@ export default function ProjectSettingsModal({
                   type="color"
                   value={statusColor.length === 7 ? statusColor : "#EAE6FF"}
                   onChange={(e) => setStatusColor(e.target.value)}
-                  style={{ width: 28, height: 28, border: "none", padding: 0, background: "transparent", cursor: "pointer" }}
+                  style={{ width: 24, height: 24, border: "none", padding: 0, background: "transparent", cursor: "pointer" }}
                 />
               </label>
               <button
@@ -649,8 +830,8 @@ export default function ProjectSettingsModal({
                   border: "none",
                   borderRadius: 4,
                   padding: "0 12px",
-                  height: 34,
-                  fontSize: 13,
+                  height: 32,
+                  fontSize: 12.5,
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
@@ -658,13 +839,13 @@ export default function ProjectSettingsModal({
                 Add
               </button>
             </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
               {STATUS_COLOR_PRESETS.map((hex) => (
                 <button
                   key={hex}
                   type="button"
                   title={hex}
-                  onClick={() => setStatusColor(hex)}
+                  onClick={() => applyPresetColor(hex)}
                   style={{
                     width: 20,
                     height: 20,
@@ -672,7 +853,7 @@ export default function ProjectSettingsModal({
                     background: hex,
                     cursor: "pointer",
                     border:
-                      statusColor.toLowerCase() === hex.toLowerCase()
+                      (editingStatusId ? editStatusColor : statusColor).toLowerCase() === hex.toLowerCase()
                         ? `2px solid ${C.primary}`
                         : `1px solid ${C.border}`,
                     padding: 0,
@@ -680,8 +861,8 @@ export default function ProjectSettingsModal({
                 />
               ))}
             </div>
-            <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>
-              To Do, Reopen, In Progress, and Done are fixed. Add more with any color.
+            <div style={{ fontSize: 11, color: C.faint, marginTop: 6 }}>
+              To Do, Reopen, In Progress, and Done are fixed. Custom statuses can be edited or removed.
             </div>
           </Field>
         )}
