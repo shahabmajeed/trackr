@@ -12,6 +12,9 @@ alter table issues
 alter table profiles
   add column if not exists avatar_url text;
 
+alter table profiles
+  add column if not exists avatar_color text;
+
 -- Time logs can target a subtask (nullable = issue-level log)
 alter table time_logs
   add column if not exists subtask_id uuid references subtasks(id) on delete cascade;

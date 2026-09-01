@@ -1,4 +1,4 @@
-import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, FileText, Plus, User } from "lucide-react";
+import { LogOut, Settings, LayoutGrid, ListTodo, Rocket, Clock, FileText, Plus, User, ClipboardList } from "lucide-react";
 import { Avatar } from "./ui";
 import Logo from "./Logo";
 import ProjectPicker from "./ProjectPicker";
@@ -157,7 +157,7 @@ export default function Sidebar({
         <User size={15} color={SIDEBAR.muted} style={{ flexShrink: 0 }} />
       </button>
 
-      <SectionLabel>Project</SectionLabel>
+      <SectionLabel>Workspace</SectionLabel>
       <div style={{ padding: "0 12px 4px" }}>
         <ProjectPicker
           projects={projects}
@@ -170,6 +170,7 @@ export default function Sidebar({
       {showProjectSettings && (
         <MenuBtn onClick={onProjectSettings} Icon={Settings} label="Project settings" />
       )}
+      <NavBtn active={view === "myissues"} onClick={() => onNavigate("myissues")} Icon={ClipboardList} label="My issues" />
 
       <SectionLabel>Overview</SectionLabel>
       <NavBtn active={view === "board"} onClick={() => onNavigate("board")} Icon={LayoutGrid} label="Board" />

@@ -10,6 +10,7 @@ create table if not exists profiles (
   name text not null,
   email text not null,
   avatar_url text,
+  avatar_color text,
   created_at timestamptz default now()
 );
 

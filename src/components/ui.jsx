@@ -1,5 +1,5 @@
 import { UserCircle2 } from "lucide-react";
-import { C, avatarColor, initials } from "../lib/theme";
+import { C, resolveAvatarColor, initials } from "../lib/theme";
 
 export function Avatar({ user, size = 26 }) {
   if (!user) {
@@ -21,7 +21,7 @@ export function Avatar({ user, size = 26 }) {
   }
   return (
     <div title={user.name} style={{
-      width: size, height: size, borderRadius: "50%", background: avatarColor(user.name),
+      width: size, height: size, borderRadius: "50%", background: resolveAvatarColor(user),
       color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
       fontSize: size * 0.4, fontWeight: 600, flexShrink: 0,
     }}>{initials(user.name)}</div>

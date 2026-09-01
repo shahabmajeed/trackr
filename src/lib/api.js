@@ -13,7 +13,14 @@ import {
 
 export function mapProfile(p) {
   if (!p) return null;
-  return { id: p.id, name: p.name, email: p.email, avatarUrl: p.avatar_url, createdAt: p.created_at };
+  return {
+    id: p.id,
+    name: p.name,
+    email: p.email,
+    avatarUrl: p.avatar_url,
+    avatarColor: p.avatar_color || null,
+    createdAt: p.created_at,
+  };
 }
 
 export function mapStatus(s) {
@@ -291,10 +298,11 @@ export async function fetchProfile(userId) {
   return mapProfile(data);
 }
 
-export async function updateProfile(userId, { name, avatarUrl }) {
+export async function updateProfile(userId, { name, avatarUrl, avatarColor }) {
   const patch = {};
   if (name != null) patch.name = name;
   if (avatarUrl !== undefined) patch.avatar_url = avatarUrl;
+  if (avatarColor !== undefined) patch.avatar_color = avatarColor || null;
   const { data, error } = await supabase.from("profiles").update(patch).eq("id", userId).select().single();
   if (error) throw error;
   if (name) await supabase.auth.updateUser({ data: { name } });

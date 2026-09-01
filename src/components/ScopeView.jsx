@@ -7,6 +7,7 @@ import { C, inputStyle, selStyle } from "../lib/theme";
 import { Field } from "./ui";
 import RichTextEditor from "./RichTextEditor";
 import ScopeFilesPanel from "./ScopeFilesPanel";
+import ScopeMembersTab from "./ScopeMembersTab";
 import * as api from "../lib/api";
 import { extractScopeFromFile } from "../lib/scopeExtract";
 import { toastSuccess, toastError } from "../lib/toast";
@@ -238,7 +239,7 @@ function SummaryTab({
   );
 }
 
-export default function ScopeView({ project, currentUser, onUpdated, caps }) {
+export default function ScopeView({ project, users = [], currentUser, onUpdated, caps }) {
   const canEditScope = caps ? caps.canEditScope : true;
   const canEditMeta = caps ? caps.canEditProjectMeta : true;
   const [tab, setTab] = useState("summary"); // summary | project | client | files
@@ -365,6 +366,7 @@ export default function ScopeView({ project, currentUser, onUpdated, caps }) {
 
   const referenceFiles = scopeFiles.filter((f) => f.collection === "reference");
   const clientFiles = scopeFiles.filter((f) => f.collection !== "reference");
+  const memberCount = users.filter((u) => project.members.includes(u.id)).length;
 
   const onUploadDoc = async (e) => {
     const file = e.target.files?.[0];
@@ -547,6 +549,7 @@ export default function ScopeView({ project, currentUser, onUpdated, caps }) {
         <TabBtn id="summary" label="Summary" active={tab === "summary"} onClick={setTab} />
         <TabBtn id="project" label="Project" active={tab === "project"} onClick={setTab} />
         <TabBtn id="client" label="Client" active={tab === "client"} onClick={setTab} />
+        <TabBtn id="members" label={`Members${memberCount ? ` (${memberCount})` : ""}`} active={tab === "members"} onClick={setTab} />
         <TabBtn id="files" label={`Files${clientFiles.length ? ` (${clientFiles.length})` : ""}`} active={tab === "files"} onClick={setTab} />
       </div>
 
@@ -751,6 +754,10 @@ export default function ScopeView({ project, currentUser, onUpdated, caps }) {
             <button type="button" disabled={busy || !canEditScope} onClick={saveClientTab} style={primaryBtn}>Save client</button>
           </div>
         </div>
+      )}
+
+      {tab === "members" && (
+        <ScopeMembersTab project={project} users={users} />
       )}
 
       {tab === "files" && (

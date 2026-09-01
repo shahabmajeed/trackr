@@ -80,6 +80,13 @@ export const avatarColor = (name = "") => {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 };
 
+/** User's chosen initials color, or name-based default. */
+export function resolveAvatarColor(user) {
+  const chosen = user?.avatarColor;
+  if (chosen && AVATAR_COLORS.includes(chosen)) return chosen;
+  return avatarColor(user?.name || "");
+}
+
 export const initials = (name = "") =>
   name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "?";
 

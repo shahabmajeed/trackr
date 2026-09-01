@@ -9,9 +9,11 @@ import { toastSuccess, toastError, toastInfo, toastConfirm } from "./lib/toast";
 import AuthScreen from "./components/AuthScreen";
 import Sidebar from "./components/Sidebar";
 import LoadingScreen from "./components/LoadingScreen";
+import ViewSkeleton, { FilterBarSkeleton } from "./components/ViewSkeletons";
 import ProfileModal from "./components/ProfileModal";
 import IssueModal from "./components/IssueModal";
 import ScopeView from "./components/ScopeView";
+import MyIssuesView from "./components/MyIssuesView";
 import {
   FilterBar, BoardView, BacklogView, SprintsView, ReportsView,
   CreateProjectModal, CreateSprintModal, StartSprintModal, ProjectSettingsModal,
@@ -20,9 +22,19 @@ import {
 const VIEW_LABELS = {
   board: "Board",
   backlog: "Backlog",
+  myissues: "My issues",
   sprints: "Sprints",
   reports: "Reports",
   scope: "Scope",
+};
+
+const LOADING_CAPS = {
+  canViewScope: true,
+  canViewReports: true,
+  canOpenSettings: false,
+  canManageWorkflow: false,
+  isSuperAdmin: false,
+  isInactive: false,
 };
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -42,18 +54,24 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [memberError, setMemberError] = useState("");
+  const [workspaceRefreshing, setWorkspaceRefreshing] = useState(false);
   const workspaceUserIdRef = useRef(null);
   const bootstrappedRef = useRef(false);
 
   const refreshWorkspace = useCallback(async (userId) => {
-    const ws = await api.loadWorkspace(userId);
-    setWorkspace(ws);
-    workspaceUserIdRef.current = userId;
-    setCurrentProjectId((prev) => {
-      if (prev && ws.projects.some((p) => p.id === prev)) return prev;
-      return ws.projects[0]?.id || null;
-    });
-    return ws;
+    setWorkspaceRefreshing(true);
+    try {
+      const ws = await api.loadWorkspace(userId);
+      setWorkspace(ws);
+      workspaceUserIdRef.current = userId;
+      setCurrentProjectId((prev) => {
+        if (prev && ws.projects.some((p) => p.id === prev)) return prev;
+        return ws.projects[0]?.id || null;
+      });
+      return ws;
+    } finally {
+      setWorkspaceRefreshing(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -138,7 +156,7 @@ export default function App() {
     };
   }, [refreshWorkspace]);
 
-  if (loading || session === undefined || (session && currentUser && workspace === null)) {
+  if (session === undefined || (loading && !currentUser)) {
     return <LoadingScreen />;
   }
 
@@ -178,6 +196,45 @@ export default function App() {
   const sprints = workspace?.sprints || [];
   const users = workspace?.users || [];
   const project = projects.find((p) => p.id === currentProjectId) || projects[0];
+  const workspaceLoading = workspace === null || workspaceRefreshing;
+
+  if (workspaceLoading && currentUser) {
+    return (
+      <div style={{ display: "flex", height: "100vh", fontFamily: FONT_FAMILY, background: C.bg, color: C.text }}>
+        <Sidebar
+          currentUser={currentUser}
+          projects={projects}
+          projectId={project?.id}
+          onProjectChange={() => {}}
+          onAddProject={() => setShowCreateProject(true)}
+          onProjectSettings={() => {}}
+          showProjectSettings={false}
+          view={view}
+          onNavigate={(id) => { if (id !== view) setView(id); }}
+          caps={LOADING_CAPS}
+          onProfile={() => setShowProfile(true)}
+          onSignOut={() => api.signOut()}
+        />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{ padding: "16px 20px 0", display: "flex", alignItems: "center", gap: 10 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{VIEW_LABELS[view] || "Board"}</h1>
+          </div>
+          {(view === "board" || view === "backlog") && <FilterBarSkeleton />}
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <ViewSkeleton view={view} />
+          </div>
+        </div>
+        <BuildVersion fixed />
+        {showProfile && (
+          <ProfileModal
+            user={currentUser}
+            onClose={() => setShowProfile(false)}
+            onUpdated={(u) => setCurrentUser(u)}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (!project) {
   return (
@@ -777,6 +834,7 @@ export default function App() {
             {view === "board" && activeSprint ? `· ${activeSprint.name}`
               : view === "board" ? "· Board"
               : view === "backlog" ? "· Backlog"
+              : view === "myissues" ? "· My issues"
               : view === "sprints" ? "· Sprints"
               : view === "scope" ? "· Scope"
               : "· Reports"}
@@ -784,11 +842,17 @@ export default function App() {
         </div>
 
         {(view === "board" || view === "backlog") && (
-          <FilterBar search={search} setSearch={setSearch} allLabels={allLabels} labelFilter={labelFilter}
-            toggleLabel={toggleLabel} onlyMine={onlyMine} setOnlyMine={setOnlyMine} currentUser={currentUser} />
+          workspaceRefreshing ? <FilterBarSkeleton /> : (
+            <FilterBar search={search} setSearch={setSearch} allLabels={allLabels} labelFilter={labelFilter}
+              toggleLabel={toggleLabel} onlyMine={onlyMine} setOnlyMine={setOnlyMine} currentUser={currentUser} />
+          )
         )}
 
         <div style={{ flex: 1, overflowY: "auto" }}>
+          {workspaceRefreshing ? (
+            <ViewSkeleton view={view} />
+          ) : (
+            <>
           {view === "board" && (
             <BoardView
               issues={activeSprint ? filteredIssues.filter((i) => i.sprintId === activeSprint.id) : []}
@@ -812,6 +876,15 @@ export default function App() {
               onCreateSprint={caps.canManageSprints ? () => setShowCreateSprint(true) : undefined}
             />
           )}
+          {view === "myissues" && (
+            <MyIssuesView
+              issues={projectIssues}
+              statuses={project.statuses}
+              currentUserId={currentUser.id}
+              projectId={project.id}
+              onOpen={setSelectedIssueId}
+            />
+          )}
           {view === "sprints" && (
             <SprintsView sprints={projectSprints} issues={projectIssues}
               onStartSprint={caps.canManageSprints ? requestStartSprint : undefined}
@@ -832,6 +905,7 @@ export default function App() {
           {view === "scope" && caps.canViewScope && (
             <ScopeView
               project={project}
+              users={members}
               currentUser={currentUser}
               caps={caps}
               onUpdated={(updated) => {
@@ -843,6 +917,8 @@ export default function App() {
                 }));
               }}
             />
+          )}
+            </>
           )}
         </div>
       </div>

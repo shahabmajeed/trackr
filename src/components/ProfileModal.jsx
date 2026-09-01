@@ -1,11 +1,12 @@
 import { useState, useRef } from "react";
 import { X } from "lucide-react";
-import { C, inputStyle } from "../lib/theme";
+import { C, inputStyle, AVATAR_COLORS, resolveAvatarColor } from "../lib/theme";
 import { Avatar, Modal, Field } from "./ui";
 import * as api from "../lib/api";
 
 export default function ProfileModal({ user, onClose, onUpdated }) {
   const [name, setName] = useState(user.name || "");
+  const [avatarColor, setAvatarColor] = useState(user.avatarColor || resolveAvatarColor(user));
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -19,7 +20,10 @@ export default function ProfileModal({ user, onClose, onUpdated }) {
     setBusy(true);
     try {
       if (!name.trim()) throw new Error("Name is required.");
-      const updated = await api.updateProfile(user.id, { name: name.trim() });
+      const updated = await api.updateProfile(user.id, {
+        name: name.trim(),
+        avatarColor,
+      });
       if (password) {
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
         if (password !== confirm) throw new Error("Passwords do not match.");
@@ -69,7 +73,22 @@ export default function ProfileModal({ user, onClose, onUpdated }) {
     }
   };
 
-  const previewUser = { ...user, name };
+  const onPickColor = async (hex) => {
+    setAvatarColor(hex);
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await api.updateProfile(user.id, { avatarColor: hex });
+      onUpdated(updated);
+      setInfo("Initials color updated.");
+    } catch (err) {
+      setError(err.message || "Could not update color.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewUser = { ...user, name, avatarColor };
 
   return (
     <Modal onClose={onClose} width={420}>
@@ -97,6 +116,33 @@ export default function ProfileModal({ user, onClose, onUpdated }) {
             </div>
             <input ref={fileRef} type="file" accept="image/*" hidden onChange={onAvatar} />
             <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6 }}>{user.email}</div>
+            {!previewUser.avatarUrl && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.subtle, marginBottom: 6 }}>Initials color</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {AVATAR_COLORS.map((hex) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      disabled={busy}
+                      title={hex}
+                      onClick={() => onPickColor(hex)}
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: "50%",
+                        background: hex,
+                        border: avatarColor === hex ? `2px solid ${C.text}` : "2px solid transparent",
+                        boxShadow: avatarColor === hex ? `0 0 0 2px #fff, 0 0 0 3px ${C.text}` : "none",
+                        cursor: busy ? "default" : "pointer",
+                        padding: 0,
+                        opacity: busy ? 0.7 : 1,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

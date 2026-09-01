@@ -80,7 +80,7 @@ export default function ProjectPicker({ projects, value, onChange, sidebar }) {
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: sidebar.muted, letterSpacing: 0.3, marginBottom: 2 }}>
-            Project
+            Workspace
           </div>
           <div style={{ fontSize: 13.5, fontWeight: 700, color: sidebar.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {current.name}
